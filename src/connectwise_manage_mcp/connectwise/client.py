@@ -9,19 +9,33 @@ from connectwise_manage_mcp.config import get_settings
 
 
 class ConnectWiseError(RuntimeError):
+    """Raised when local configuration or a ConnectWise API call fails."""
+
     pass
 
 
 class ConnectWiseClient:
+    """Thin async wrapper around the ConnectWise Manage REST API.
+
+    The client centralizes auth headers, URL construction, pagination defaults,
+    and common error handling so the MCP tool layer can stay small and focused.
+    """
+
     def __init__(self) -> None:
+        """Load cached runtime settings for subsequent API calls."""
+
         self.settings = get_settings()
 
     def _auth_header(self) -> str:
+        """Build the Basic auth header expected by ConnectWise Manage."""
+
         raw = f"{self.settings.cw_company_id}+{self.settings.cw_public_key}:{self.settings.cw_private_key}"
         encoded = base64.b64encode(raw.encode("utf-8")).decode("ascii")
         return f"Basic {encoded}"
 
     def _headers(self) -> dict[str, str]:
+        """Return standard headers shared by all ConnectWise API requests."""
+
         return {
             "Authorization": self._auth_header(),
             "clientId": self.settings.cw_client_id,
@@ -30,6 +44,8 @@ class ConnectWiseClient:
         }
 
     def _url(self, path: str) -> str:
+        """Join the configured base URL with an API path fragment."""
+
         base = self.settings.cw_base_url.rstrip("/")
         suffix = path if path.startswith("/") else f"/{path}"
         return f"{base}{suffix}"
@@ -42,6 +58,21 @@ class ConnectWiseClient:
         params: dict[str, Any] | None = None,
         json: Any = None,
     ) -> Any:
+        """Execute a single HTTP request and normalize ConnectWise-style errors.
+
+        Args:
+            method: HTTP verb to send to ConnectWise.
+            path: API path relative to ``cw_base_url``.
+            params: Optional query-string parameters.
+            json: Optional JSON body for POST or PATCH requests.
+
+        Returns:
+            Parsed JSON from the response, or ``{"ok": True}`` for empty success responses.
+
+        Raises:
+            ConnectWiseError: If configuration is incomplete or the API returns an error.
+        """
+
         if not self.settings.is_configured:
             raise ConnectWiseError("ConnectWise settings are incomplete. Fill in the env vars first.")
 
@@ -64,9 +95,13 @@ class ConnectWiseClient:
         return response.json()
 
     async def healthcheck(self) -> dict[str, Any]:
+        """Fetch basic system information to verify API reachability."""
+
         return await self._request("GET", "/system/info")
 
     async def get_ticket(self, ticket_id: int) -> dict[str, Any]:
+        """Fetch a single service ticket by numeric identifier."""
+
         return await self._request("GET", f"/service/tickets/{ticket_id}")
 
     async def search_tickets(
@@ -79,6 +114,20 @@ class ConnectWiseClient:
         page: int = 1,
         page_size: int | None = None,
     ) -> list[dict[str, Any]]:
+        """Search service tickets with simple business-facing filters.
+
+        Args:
+            board: Optional board name to match exactly.
+            status: Optional status name to match exactly.
+            company: Optional partial company name match.
+            summary: Optional partial ticket summary match.
+            page: 1-based results page.
+            page_size: Requested page size, capped to configured maximum.
+
+        Returns:
+            A list of raw ConnectWise ticket records.
+        """
+
         conditions: list[str] = []
         if board:
             conditions.append(f'board/name="{self._escape(board)}"')
@@ -109,6 +158,20 @@ class ConnectWiseClient:
         contact_id: int | None = None,
         priority: str | None = None,
     ) -> dict[str, Any]:
+        """Create a new service ticket with the minimum common fields.
+
+        Args:
+            company_id: Numeric ConnectWise company id.
+            board: Destination board name.
+            summary: Ticket summary line.
+            initial_description: Main body/description for the ticket.
+            contact_id: Optional numeric contact id to associate.
+            priority: Optional priority name.
+
+        Returns:
+            The raw ConnectWise ticket payload for the newly created ticket.
+        """
+
         payload: dict[str, Any] = {
             "company": {"id": company_id},
             "board": {"name": board},
@@ -122,6 +185,8 @@ class ConnectWiseClient:
         return await self._request("POST", "/service/tickets", json=payload)
 
     async def update_ticket_status(self, ticket_id: int, status: str) -> dict[str, Any]:
+        """Replace the current ticket status by name."""
+
         patches = [{"op": "replace", "path": "status", "value": {"name": status}}]
         return await self._request("PATCH", f"/service/tickets/{ticket_id}", json=patches)
 
@@ -140,9 +205,33 @@ class ConnectWiseClient:
         impact: str | None = None,
         source: str | None = None,
     ) -> dict[str, Any]:
+        """Patch one or more ticket classification fields in a single API call.
+
+        Args:
+            ticket_id: Numeric ticket id to update.
+            status: Optional status name.
+            priority: Optional priority name.
+            board: Optional board name.
+            type_name: Optional ticket type name.
+            sub_type_name: Optional ticket subtype name.
+            item_name: Optional ticket item name.
+            team: Optional team name.
+            severity: Optional severity name.
+            impact: Optional impact name.
+            source: Optional source name.
+
+        Returns:
+            The raw ConnectWise response payload for the patch request.
+
+        Raises:
+            ConnectWiseError: If no fields were supplied.
+        """
+
         patches: list[dict[str, Any]] = []
 
         def add_replace(path: str, value: Any) -> None:
+            """Append a JSON Patch replace operation for the ticket update."""
+
             patches.append({"op": "replace", "path": path, "value": value})
 
         if status:
@@ -172,6 +261,8 @@ class ConnectWiseClient:
         return await self._request("PATCH", f"/service/tickets/{ticket_id}", json=patches)
 
     async def add_ticket_note(self, ticket_id: int, text: str, internal: bool = True) -> dict[str, Any]:
+        """Create a note entry on a service ticket."""
+
         payload = {
             "text": text,
             "detailDescriptionFlag": True,
@@ -188,6 +279,8 @@ class ConnectWiseClient:
         page_size: int | None = None,
         order_by: str = "dateCreated desc",
     ) -> list[dict[str, Any]]:
+        """Return ticket notes ordered for review workflows."""
+
         params = {
             "page": page,
             "pageSize": min(page_size or self.settings.cw_page_size, self.settings.cw_max_page_size),
@@ -203,6 +296,8 @@ class ConnectWiseClient:
         page_size: int | None = None,
         order_by: str = "dateEntered desc",
     ) -> list[dict[str, Any]]:
+        """Return time entries linked to the given ticket."""
+
         params = {
             "conditions": f'(chargeToType="ServiceTicket" OR chargeToType="ProjectTicket") AND chargeToId={ticket_id}',
             "page": page,
@@ -229,6 +324,28 @@ class ConnectWiseClient:
         email_contact_flag: bool = False,
         email_cc_flag: bool = False,
     ) -> dict[str, Any]:
+        """Create a time entry tied to a service ticket.
+
+        Args:
+            ticket_id: Numeric service ticket id.
+            member_identifier: ConnectWise member identifier.
+            time_start: Entry start timestamp in ConnectWise-compatible format.
+            time_end: Optional entry end timestamp.
+            hours_deduct: Optional hours-to-deduct value.
+            actual_hours: Optional actual hours value.
+            billable_option: Optional billable option name/value.
+            work_type: Optional work type name.
+            work_role: Optional work role name.
+            notes: Optional customer-facing notes.
+            internal_notes: Optional internal-only notes.
+            email_resource_flag: Whether to email the resource.
+            email_contact_flag: Whether to email the contact.
+            email_cc_flag: Whether to email CC recipients.
+
+        Returns:
+            The raw ConnectWise time-entry payload returned by the API.
+        """
+
         payload: dict[str, Any] = {
             "chargeToType": "ServiceTicket",
             "chargeToId": ticket_id,
@@ -261,6 +378,8 @@ class ConnectWiseClient:
         return await self._request("POST", "/time/entries", json=payload)
 
     async def get_company(self, company_id: int) -> dict[str, Any]:
+        """Fetch a single company by numeric identifier."""
+
         return await self._request("GET", f"/company/companies/{company_id}")
 
     async def list_boards(
@@ -271,6 +390,8 @@ class ConnectWiseClient:
         page: int = 1,
         page_size: int | None = None,
     ) -> list[dict[str, Any]]:
+        """List service boards with optional name and inactive filters."""
+
         conditions: list[str] = []
         if name:
             conditions.append(f'name contains "{self._escape(name)}"')
@@ -288,19 +409,29 @@ class ConnectWiseClient:
         return await self._request("GET", "/service/boards", params=params)
 
     async def get_board_statuses(self, board_id: int) -> list[dict[str, Any]]:
+        """Fetch statuses available for a given service board."""
+
         return await self._request("GET", f"/service/boards/{board_id}/statuses")
 
     async def get_board_types(self, board_id: int) -> list[dict[str, Any]]:
+        """Fetch types available for a given service board."""
+
         return await self._request("GET", f"/service/boards/{board_id}/types")
 
     async def get_board_subtypes(self, board_id: int, type_id: int) -> list[dict[str, Any]]:
+        """Fetch subtypes for a specific board/type combination."""
+
         return await self._request("GET", f"/service/boards/{board_id}/types/{type_id}/subtypes")
 
     async def get_board_items(self, board_id: int, type_id: int, subtype_id: int) -> list[dict[str, Any]]:
+        """Fetch items for a specific board/type/subtype combination."""
+
         path = f"/service/boards/{board_id}/types/{type_id}/subtypes/{subtype_id}/items"
         return await self._request("GET", path)
 
     async def get_board_teams(self, board_id: int) -> list[dict[str, Any]]:
+        """Fetch teams configured for a given service board."""
+
         return await self._request("GET", f"/service/boards/{board_id}/teams")
 
     async def search_companies(
@@ -311,6 +442,8 @@ class ConnectWiseClient:
         page: int = 1,
         page_size: int | None = None,
     ) -> list[dict[str, Any]]:
+        """Search companies by name and optional external identifier."""
+
         conditions: list[str] = []
         if name:
             conditions.append(f'name contains "{self._escape(name)}"')
@@ -336,6 +469,8 @@ class ConnectWiseClient:
         page: int = 1,
         page_size: int | None = None,
     ) -> list[dict[str, Any]]:
+        """Search contacts by company, name, or email address."""
+
         conditions: list[str] = []
         if company_id is not None:
             conditions.append(f'company/id={company_id}')
@@ -363,6 +498,8 @@ class ConnectWiseClient:
         page: int = 1,
         page_size: int | None = None,
     ) -> list[dict[str, Any]]:
+        """Search members for assignment and time-entry workflows."""
+
         conditions: list[str] = []
         if identifier:
             conditions.append(f'identifier contains "{self._escape(identifier)}"')
@@ -392,6 +529,8 @@ class ConnectWiseClient:
         page: int = 1,
         page_size: int | None = None,
     ) -> list[dict[str, Any]]:
+        """List work types with optional filtering for inactive entries."""
+
         conditions: list[str] = []
         if name:
             conditions.append(f'name contains "{self._escape(name)}"')
@@ -416,6 +555,8 @@ class ConnectWiseClient:
         page: int = 1,
         page_size: int | None = None,
     ) -> list[dict[str, Any]]:
+        """List work roles with optional filtering for inactive entries."""
+
         conditions: list[str] = []
         if name:
             conditions.append(f'name contains "{self._escape(name)}"')
@@ -434,4 +575,6 @@ class ConnectWiseClient:
 
     @staticmethod
     def _escape(value: str) -> str:
+        """Escape double quotes for ConnectWise conditions expressions."""
+
         return value.replace('"', '\\"')

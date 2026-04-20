@@ -7,6 +7,11 @@ from connectwise_manage_mcp.connectwise.client import ConnectWiseClient
 
 
 def _company_summary(company: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a raw company record into a compact, tool-friendly shape.
+
+    The summary keeps the fields most often needed for ticket creation and lookup flows.
+    """
+
     company_type = company.get("type") or {}
     status = company.get("status") or {}
     return {
@@ -20,6 +25,15 @@ def _company_summary(company: dict[str, Any]) -> dict[str, Any]:
 
 @mcp.tool(description="Get a single ConnectWise company by id.")
 async def get_company(company_id: int) -> dict[str, Any]:
+    """Fetch one company and include a compact summary alongside the raw payload.
+
+    Args:
+        company_id: Numeric ConnectWise company id.
+
+    Returns:
+        A tool response containing the raw company record and a compact summary.
+    """
+
     client = ConnectWiseClient()
     company = await client.get_company(company_id)
     return {"ok": True, "data": company, "summary": _company_summary(company)}
@@ -32,6 +46,18 @@ async def search_companies(
     page: int = 1,
     page_size: int = 50,
 ) -> dict[str, Any]:
+    """Search companies and return both summaries and raw API data.
+
+    Args:
+        name: Optional partial company-name match.
+        identifier: Optional partial company identifier match.
+        page: 1-based results page.
+        page_size: Requested page size.
+
+    Returns:
+        A tool response containing compact company summaries and raw records.
+    """
+
     client = ConnectWiseClient()
     companies = await client.search_companies(
         name=name,

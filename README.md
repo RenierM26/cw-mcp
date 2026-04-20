@@ -7,6 +7,28 @@ This scaffold is intentionally narrow and practical:
 - HTTP-friendly for Azure deployment
 - stdio-friendly for local testing
 - central auth/retry/query logic in one place
+- lightweight health checks for container and platform probes
+
+The repository is aimed at two main use cases:
+- an MCP server that AI agents can call over HTTP or stdio
+- a small, readable codebase you can safely adapt for your own ConnectWise tenant
+
+## Architecture at a glance
+
+The request flow is intentionally simple:
+
+1. an MCP client calls a tool exposed by FastMCP
+2. the tool function in `src/connectwise_manage_mcp/tools/` validates and shapes arguments
+3. `ConnectWiseClient` builds the request, auth headers, and query conditions
+4. the ConnectWise Manage REST API returns raw data
+5. the tool returns both a compact summary and the raw payload when useful
+
+That split keeps the codebase easy to reason about:
+- `server.py` handles transport and health checks
+- `tools/` handles MCP-facing workflows
+- `connectwise/client.py` handles API communication
+- `models.py` holds lightweight shared shapes
+- `config.py` centralizes environment-backed settings
 
 ## Included tools
 
@@ -70,6 +92,12 @@ Fill in:
 - `CW_PUBLIC_KEY`
 - `CW_PRIVATE_KEY`
 - `CW_CLIENT_ID`
+- `AUTH_BEARER_TOKEN`
+- optionally `AUTH_ALLOWED_IPS`
+
+Auth defaults to enabled. For normal Docker, VM, or Azure deployments, leave it that way and use a long random bearer token.
+The devcontainer disables auth automatically for local VS Code work.
+If you expose the service publicly, adding `AUTH_ALLOWED_IPS` gives you a second safety layer on top of the bearer token.
 
 Example base URL:
 
@@ -77,16 +105,16 @@ Example base URL:
 https://your-company.connectwise.com/v4_6_release/apis/3.0
 ```
 
-## Run locally
+### 3. Install dependencies and run locally
 
-### With uv
+#### With uv
 
 ```bash
 uv sync
 uv run cwmcp-http
 ```
 
-### With pip
+#### With pip
 
 ```bash
 python -m venv .venv
@@ -107,19 +135,97 @@ Health endpoint:
 http://localhost:8000/health
 ```
 
+Notes:
+- `GET /health` is browser-friendly and returns JSON.
+- `/health` is intentionally minimal and does not echo raw ConnectWise tenant or licensing details.
+- `GET /mcp` is not a normal human web page. A plain browser request can return a protocol-level error like `406 Not Acceptable`, which is expected for FastMCP HTTP transport.
+- When auth is enabled, MCP clients must send `Authorization: Bearer <AUTH_BEARER_TOKEN>` for `/mcp` requests.
+- If `AUTH_ALLOWED_IPS` is set, only those source IPs or CIDR ranges can reach `/mcp`.
+
 ## Run in stdio mode
 
-Useful for local MCP testing:
+Useful for local MCP testing or editor integrations that prefer stdio transport:
 
 ```bash
 cwmcp-stdio
 ```
+
+## FastMCP CLI test examples
+
+These examples are useful when you want to test the server without wiring a full client first.
+
+### Inspect the local server from source
+
+```bash
+./.venv/bin/fastmcp inspect src/connectwise_manage_mcp/server.py
+```
+
+### List available tools from source
+
+```bash
+./.venv/bin/fastmcp list src/connectwise_manage_mcp/server.py
+```
+
+### Call a tool directly from source
+
+```bash
+./.venv/bin/fastmcp call src/connectwise_manage_mcp/server.py get_ticket --input-json '{"ticket_id": 12345}' --json
+```
+
+### Run the server with FastMCP itself over HTTP
+
+```bash
+./.venv/bin/fastmcp run src/connectwise_manage_mcp/server.py --transport http --host 127.0.0.1 --port 8000
+```
+
+### List tools from a running HTTP endpoint
+
+```bash
+./.venv/bin/fastmcp list http://127.0.0.1:8000/mcp --auth 'super-secret-token'
+```
+
+### Call a tool on a running HTTP endpoint
+
+```bash
+./.venv/bin/fastmcp call http://127.0.0.1:8000/mcp get_board_types --input-json '{"board_id": 12}' --auth 'super-secret-token' --json
+```
+
+### Open the FastMCP inspector for local development
+
+```bash
+./.venv/bin/fastmcp dev inspector src/connectwise_manage_mcp/server.py
+```
+
+Practical notes:
+- source-based commands are handy before env vars or containers are fully wired
+- HTTP-based commands are handy for validating the real deployed transport path
+- if auth is enabled, pass the bearer token with `--auth '<token>'`
+- if the server is not configured, tool calls will fail cleanly and `/health` will explain why
 
 ## Run in Docker
 
 ```bash
 docker build -t connectwise-manage-mcp .
 docker run --rm -p 8000:8000 --env-file .env connectwise-manage-mcp
+```
+
+Container probes should generally target:
+- `/health` for readiness or liveness style checks
+- `/mcp` only for actual MCP clients with a bearer token, and from allowed IPs if an allowlist is configured
+
+## Run in VS Code devcontainer
+
+The included devcontainer is set up to:
+- install the project in editable mode
+- forward container port `8000`
+- auto-start `cwmcp-http` when the container starts
+- disable bearer auth by default for local VS Code development
+
+After reopening in the devcontainer, useful checks are:
+
+```bash
+cat /tmp/cwmcp-http.log
+curl http://127.0.0.1:8000/health
 ```
 
 ## Suggested Azure deploy target
@@ -141,17 +247,29 @@ Main MCP endpoint after deploy:
 https://<your-app-fqdn>/mcp
 ```
 
-## n8n usage options
+## n8n and MCP client usage
 
-### Option 1, n8n as plain HTTP client
-Call this service from an HTTP Request node if you expose helper endpoints yourself later. This scaffold is MCP-first, so the main endpoint is `/mcp`.
-
-### Option 2, MCP-aware client path
+### Option 1, MCP-aware client path
 Use an MCP-capable client or gateway that can connect to:
 
 ```text
-http://your-service-url/mcp
+https://your-service-url/mcp
 ```
+
+When auth is enabled, send:
+
+```text
+Authorization: Bearer <AUTH_BEARER_TOKEN>
+```
+
+### Option 2, plain HTTP helper routes
+If you later add your own custom helper endpoints, n8n can call those with standard HTTP Request nodes. In the current scaffold, the only custom helper route is:
+
+```text
+GET /health
+```
+
+That means the main `/mcp` endpoint should be treated as MCP transport, not as a generic REST endpoint.
 
 ## Notes on ConnectWise Manage
 
@@ -179,13 +297,315 @@ The quickest tool for AI-driven review is `get_ticket_bundle`, which returns the
 The safest classification flow is usually:
 1. `list_boards`
 2. `get_board_lookup`
-3. `update_ticket_classifications`
+3. optionally `get_board_types`, `get_board_subtypes`, or `get_board_items` for explicit hierarchy calls
+4. `update_ticket_classifications`
 
 The safest time-entry flow is usually:
 1. `search_members`
 2. `list_work_types`
 3. `list_work_roles`
 4. `add_ticket_time_entry`
+
+A typical triage flow is:
+1. `get_ticket_bundle`
+2. decide on board/status/type updates
+3. `update_ticket_classifications`
+4. `add_ticket_note` if you want to record the action taken
+
+## Example tool calls and results
+
+These are intentionally small, human-readable examples of the shapes this server returns.
+Exact fields from ConnectWise can vary by tenant.
+
+### Example: `get_ticket_bundle`
+
+Tool call arguments:
+
+```json
+{
+  "ticket_id": 12345,
+  "notes_page_size": 10,
+  "time_entries_page_size": 10
+}
+```
+
+Example result excerpt:
+
+```json
+{
+  "ok": true,
+  "ticket": {
+    "summary": {
+      "id": 12345,
+      "summary": "User cannot access VPN",
+      "board": "Service Desk",
+      "status": "New",
+      "type": "Incident",
+      "subType": "Remote Access",
+      "item": "VPN",
+      "priority": "Priority 2",
+      "company": "Example Co",
+      "contact": "Jane Smith",
+      "owner": "helpdesk1",
+      "updatedAt": "2026-04-20T16:00:00Z"
+    },
+    "description": "User reports VPN login failures after password reset.",
+    "raw": { "...": "full ticket payload" }
+  },
+  "notes": {
+    "count": 2,
+    "data": [
+      {
+        "id": 555,
+        "text": "Reset VPN profile and requested retest.",
+        "createdBy": "helpdesk1",
+        "createdAt": "2026-04-20T15:40:00Z",
+        "internal": true,
+        "detail": true,
+        "resolution": false
+      }
+    ],
+    "raw": [
+      { "...": "full note payload" }
+    ]
+  },
+  "timeEntries": {
+    "count": 1,
+    "data": [
+      {
+        "id": 777,
+        "member": "helpdesk1",
+        "timeStart": "2026-04-20T15:30:00Z",
+        "timeEnd": "2026-04-20T15:45:00Z",
+        "actualHours": 0.25,
+        "hoursDeduct": 0.25,
+        "billableOption": "Billable",
+        "workType": "Remote Support",
+        "workRole": "Engineer",
+        "notes": "Investigated VPN reset issue.",
+        "internalNotes": null
+      }
+    ],
+    "raw": [
+      { "...": "full time entry payload" }
+    ]
+  }
+}
+```
+
+### Example: `update_ticket_classifications`
+
+Tool call arguments:
+
+```json
+{
+  "ticket_id": 12345,
+  "status": "In Progress",
+  "type_name": "Incident",
+  "sub_type_name": "Remote Access",
+  "item_name": "VPN",
+  "priority": "Priority 2"
+}
+```
+
+Example result excerpt:
+
+```json
+{
+  "ok": true,
+  "ticketId": 12345,
+  "updated": {
+    "status": "In Progress",
+    "priority": "Priority 2",
+    "board": null,
+    "type": "Incident",
+    "subType": "Remote Access",
+    "item": "VPN",
+    "team": null,
+    "severity": null,
+    "impact": null,
+    "source": null
+  },
+  "data": {
+    "...": "raw patch response"
+  }
+}
+```
+
+### Example: `get_board_lookup`
+
+Tool call arguments:
+
+```json
+{
+  "board_id": 12,
+  "type_id": 3,
+  "subtype_id": 9
+}
+```
+
+Example result excerpt:
+
+```json
+{
+  "ok": true,
+  "boardId": 12,
+  "statuses": [
+    {
+      "id": 1,
+      "name": "New",
+      "board": "Service Desk",
+      "sort": 0,
+      "closed": false,
+      "inactive": false
+    }
+  ],
+  "types": [
+    {
+      "id": 3,
+      "name": "Incident",
+      "inactive": false,
+      "defaultFlag": true
+    }
+  ],
+  "teams": [
+    {
+      "id": 4,
+      "name": "Helpdesk",
+      "location": "HQ",
+      "department": "Support"
+    }
+  ],
+  "subtypes": [
+    {
+      "id": 9,
+      "name": "Remote Access",
+      "inactive": false,
+      "defaultFlag": false
+    }
+  ],
+  "items": [
+    {
+      "id": 14,
+      "name": "VPN",
+      "inactive": false,
+      "defaultFlag": false
+    }
+  ],
+  "raw": {
+    "...": "full lookup payloads"
+  }
+}
+```
+
+### Example: `add_ticket_time_entry`
+
+Tool call arguments:
+
+```json
+{
+  "ticket_id": 12345,
+  "member_identifier": "helpdesk1",
+  "time_start": "2026-04-20T15:30:00Z",
+  "time_end": "2026-04-20T15:45:00Z",
+  "actual_hours": 0.25,
+  "hours_deduct": 0.25,
+  "work_type": "Remote Support",
+  "work_role": "Engineer",
+  "notes": "Investigated VPN reset issue."
+}
+```
+
+Example result excerpt:
+
+```json
+{
+  "ok": true,
+  "ticketId": 12345,
+  "data": {
+    "...": "raw time-entry payload"
+  },
+  "summary": {
+    "id": 777,
+    "member": "helpdesk1",
+    "timeStart": "2026-04-20T15:30:00Z",
+    "timeEnd": "2026-04-20T15:45:00Z",
+    "actualHours": 0.25,
+    "hoursDeduct": 0.25,
+    "billableOption": null,
+    "workType": "Remote Support",
+    "workRole": "Engineer",
+    "notes": "Investigated VPN reset issue.",
+    "internalNotes": null
+  }
+}
+```
+
+## Troubleshooting
+
+### `/health` returns `503 Service Unavailable`
+
+This usually means the server started, but the required ConnectWise environment variables are missing.
+Check:
+- `CW_BASE_URL`
+- `CW_COMPANY_ID`
+- `CW_PUBLIC_KEY`
+- `CW_PRIVATE_KEY`
+- `CW_CLIENT_ID`
+
+### `/mcp` returns `406 Not Acceptable` in a browser
+
+That is usually expected.
+The `/mcp` route is an MCP transport endpoint, not a normal browser page.
+Use an MCP client, FastMCP CLI, or check `/health` in a browser instead.
+
+### VS Code forwards a port, but nothing answers on it
+
+In the devcontainer flow, the container may be up before the MCP server has started.
+Check:
+
+```bash
+cat /tmp/cwmcp-http.log
+curl http://127.0.0.1:8000/health
+```
+
+If needed, restart the server inside the container:
+
+```bash
+pkill -f cwmcp-http || true
+nohup cwmcp-http >/tmp/cwmcp-http.log 2>&1 &
+```
+
+### FastMCP CLI tool calls fail immediately
+
+That usually means one of three things:
+- the server is not configured yet
+- the tool arguments do not match the expected JSON shape
+- auth is enabled and the bearer token was not supplied
+
+Try these first:
+
+```bash
+./.venv/bin/fastmcp inspect src/connectwise_manage_mcp/server.py
+./.venv/bin/fastmcp list src/connectwise_manage_mcp/server.py
+curl http://127.0.0.1:8000/health
+```
+
+### MCP endpoint returns `401 Unauthorized`
+
+That usually means bearer auth is enabled and the client did not send the expected token.
+
+For HTTP clients, send:
+
+```text
+Authorization: Bearer <AUTH_BEARER_TOKEN>
+```
+
+For FastMCP CLI, use:
+
+```bash
+./.venv/bin/fastmcp list http://127.0.0.1:8000/mcp --auth '<AUTH_BEARER_TOKEN>'
+```
 
 ## First improvements I would make
 
@@ -198,3 +618,13 @@ The safest time-entry flow is usually:
 ## Security
 
 Do not commit real `.env` files. Use Azure Container App secrets or Key Vault in production.
+
+At minimum, treat these as secrets:
+- `CW_PUBLIC_KEY`
+- `CW_PRIVATE_KEY`
+- `CW_CLIENT_ID`
+- `AUTH_BEARER_TOKEN`
+
+It is also worth limiting exposure of the HTTP transport. If only automation clients need access, prefer private networking or internal ingress over public internet exposure.
+Even with bearer auth enabled, private ingress is still the better default when available.
+For public exposure, a good pattern is bearer auth plus `AUTH_ALLOWED_IPS` for the known client or gateway egress ranges.

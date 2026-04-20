@@ -24,6 +24,9 @@ Environment variables:
 - `HOST=0.0.0.0`
 - `PORT=8000`
 - `LOG_LEVEL=INFO`
+- `AUTH_ENABLED=true`
+- `AUTH_ALLOWED_IPS` (optional, comma-separated IPs or CIDRs)
+- `AUTH_TRUST_X_FORWARDED_FOR=true` when you want to enforce the allowlist using proxy-forwarded client IPs
 - `CW_BASE_URL`
 - `CW_COMPANY_ID`
 - `CW_CLIENT_ID`
@@ -35,10 +38,12 @@ Environment variables:
 Secrets:
 - `CW_PUBLIC_KEY`
 - `CW_PRIVATE_KEY`
+- `AUTH_BEARER_TOKEN`
 
 Recommended secret mapping in Container Apps:
 - env `CW_PUBLIC_KEY` -> secret `cw-public-key`
 - env `CW_PRIVATE_KEY` -> secret `cw-private-key`
+- env `AUTH_BEARER_TOKEN` -> secret `auth-bearer-token`
 
 ## Suggested networking model
 
@@ -47,7 +52,7 @@ If n8n is already in Azure, the cleanest path is:
 - expose this service with **internal ingress**
 - have n8n connect to the internal FQDN
 
-If that is awkward, external ingress also works, but then you should put simple auth and IP restrictions in front of it.
+If that is awkward, external ingress also works, but then you should keep bearer auth enabled and preferably configure both platform-side restrictions and `AUTH_ALLOWED_IPS`.
 
 ## MCP endpoint
 
@@ -62,6 +67,12 @@ Health endpoint:
 ```text
 https://<your-app-fqdn>/health
 ```
+
+Authentication:
+- `/mcp` should require `Authorization: Bearer <AUTH_BEARER_TOKEN>`
+- `/health` is left open for probes and simple operational checks
+- `/health` intentionally returns only minimal operational status and does not expose raw ConnectWise system details
+- if `AUTH_ALLOWED_IPS` is set, `/mcp` will also enforce the configured IP or CIDR allowlist
 
 ## Azure CLI example
 
@@ -88,7 +99,8 @@ az containerapp secret set \
   --resource-group "$RG" \
   --secrets \
     cw-public-key='<your-public-key>' \
-    cw-private-key='<your-private-key>'
+    cw-private-key='<your-private-key>' \
+    auth-bearer-token='<your-long-random-bearer-token>'
 ```
 
 Create the app:
@@ -111,6 +123,9 @@ az containerapp create \
     HOST=0.0.0.0 \
     PORT=8000 \
     LOG_LEVEL=INFO \
+    AUTH_ENABLED=true \
+    AUTH_ALLOWED_IPS='203.0.113.10,198.51.100.0/24' \
+    AUTH_TRUST_X_FORWARDED_FOR=true \
     CW_BASE_URL='https://your-company.connectwise.com/v4_6_release/apis/3.0' \
     CW_COMPANY_ID='your_company_id' \
     CW_CLIENT_ID='your_client_id' \
@@ -119,7 +134,8 @@ az containerapp create \
     CW_PAGE_SIZE=50 \
     CW_MAX_PAGE_SIZE=100 \
     CW_PUBLIC_KEY=secretref:cw-public-key \
-    CW_PRIVATE_KEY=secretref:cw-private-key
+    CW_PRIVATE_KEY=secretref:cw-private-key \
+    AUTH_BEARER_TOKEN=secretref:auth-bearer-token
 ```
 
 Update the image later:
@@ -152,6 +168,14 @@ For n8n MCP usage, point it at:
 https://<your-app-fqdn>/mcp
 ```
 
+And send this header:
+
+```text
+Authorization: Bearer <AUTH_BEARER_TOKEN>
+```
+
+If you also enable `AUTH_ALLOWED_IPS`, make sure the allowlist contains the public egress IP or CIDR used by n8n or your gateway.
+
 If n8n sits in the same private environment, prefer the internal URL. That keeps the ConnectWise wrapper off the public internet.
 
 ## Operational advice
@@ -160,14 +184,14 @@ If n8n sits in the same private environment, prefer the internal URL. That keeps
 - keep request timeouts conservative, ConnectWise can be slow and annoying
 - use lookup tools before classification updates to reduce bad writes
 - keep logs on, but do not log raw secrets
-- if you later expose it externally, add auth before broad use
+- if you later expose it externally, keep auth enabled, rotate the bearer token like any other secret, and consider `AUTH_ALLOWED_IPS` a second control rather than a replacement for private ingress
 
 ## Good first smoke tests
 
 After deployment, verify:
 
 1. `GET /health`
-2. MCP client can connect to `/mcp`
+2. MCP client can connect to `/mcp` with the bearer token
 3. `list_boards`
 4. `search_members`
 5. `get_ticket_bundle` on a safe test ticket

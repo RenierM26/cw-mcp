@@ -7,6 +7,8 @@ from connectwise_manage_mcp.connectwise.client import ConnectWiseClient
 
 
 def _ticket_summary(ticket: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a raw ticket into a compact summary for tool responses."""
+
     contact = ticket.get("contact") or {}
     owner = ticket.get("owner") or ticket.get("assignedTo") or {}
     company = ticket.get("company") or {}
@@ -29,6 +31,8 @@ def _ticket_summary(ticket: dict[str, Any]) -> dict[str, Any]:
 
 
 def _note_summary(note: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a raw ticket note into a compact summary."""
+
     member = note.get("member") or {}
     return {
         "id": note.get("id"),
@@ -42,6 +46,8 @@ def _note_summary(note: dict[str, Any]) -> dict[str, Any]:
 
 
 def _time_entry_summary(entry: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a raw time entry into a compact summary."""
+
     member = entry.get("member") or {}
     work_type = entry.get("workType") or {}
     work_role = entry.get("workRole") or {}
@@ -62,6 +68,8 @@ def _time_entry_summary(entry: dict[str, Any]) -> dict[str, Any]:
 
 @mcp.tool(description="Get a single ConnectWise service ticket by id.")
 async def get_ticket(ticket_id: int) -> dict[str, Any]:
+    """Fetch one ticket and include a compact summary alongside the raw payload."""
+
     client = ConnectWiseClient()
     ticket = await client.get_ticket(ticket_id)
     return {"ok": True, "data": ticket, "summary": _ticket_summary(ticket)}
@@ -73,6 +81,17 @@ async def get_ticket_bundle(
     notes_page_size: int = 50,
     time_entries_page_size: int = 50,
 ) -> dict[str, Any]:
+    """Fetch a ticket together with its notes and time entries in one call.
+
+    Args:
+        ticket_id: Numeric service ticket id.
+        notes_page_size: Max notes to fetch for the bundle.
+        time_entries_page_size: Max time entries to fetch for the bundle.
+
+    Returns:
+        A combined payload containing normalized summaries plus raw API data.
+    """
+
     client = ConnectWiseClient()
     ticket = await client.get_ticket(ticket_id)
     notes = await client.get_ticket_notes(ticket_id, page_size=notes_page_size)
@@ -113,6 +132,20 @@ async def search_tickets(
     page: int = 1,
     page_size: int = 50,
 ) -> dict[str, Any]:
+    """Search tickets and return both summaries and raw API data.
+
+    Args:
+        board: Optional board name filter.
+        status: Optional status name filter.
+        company: Optional partial company-name filter.
+        summary: Optional partial summary filter.
+        page: 1-based results page.
+        page_size: Requested page size.
+
+    Returns:
+        A tool response with normalized ticket summaries and raw records.
+    """
+
     client = ConnectWiseClient()
     tickets = await client.search_tickets(
         board=board,
@@ -139,6 +172,8 @@ async def create_ticket(
     contact_id: int | None = None,
     priority: str | None = None,
 ) -> dict[str, Any]:
+    """Create a ticket and include a compact summary of the created record."""
+
     client = ConnectWiseClient()
     ticket = await client.create_ticket(
         company_id=company_id,
@@ -153,6 +188,8 @@ async def create_ticket(
 
 @mcp.tool(description="Update the status of an existing ConnectWise service ticket.")
 async def update_ticket_status(ticket_id: int, status: str) -> dict[str, Any]:
+    """Update only the ticket status and echo the requested change."""
+
     client = ConnectWiseClient()
     result = await client.update_ticket_status(ticket_id, status)
     return {"ok": True, "data": result, "ticketId": ticket_id, "newStatus": status}
@@ -160,6 +197,8 @@ async def update_ticket_status(ticket_id: int, status: str) -> dict[str, Any]:
 
 @mcp.tool(description="Add a note to a ConnectWise service ticket.")
 async def add_ticket_note(ticket_id: int, text: str, internal: bool = True) -> dict[str, Any]:
+    """Add a note to a ticket and echo whether it was marked internal."""
+
     client = ConnectWiseClient()
     result = await client.add_ticket_note(ticket_id, text=text, internal=internal)
     return {"ok": True, "data": result, "ticketId": ticket_id, "internal": internal}
@@ -167,6 +206,8 @@ async def add_ticket_note(ticket_id: int, text: str, internal: bool = True) -> d
 
 @mcp.tool(description="Get notes for a ConnectWise service ticket.")
 async def get_ticket_notes(ticket_id: int, page: int = 1, page_size: int = 50) -> dict[str, Any]:
+    """Return ticket notes as summaries plus raw API data."""
+
     client = ConnectWiseClient()
     notes = await client.get_ticket_notes(ticket_id, page=page, page_size=page_size)
     return {
@@ -179,6 +220,8 @@ async def get_ticket_notes(ticket_id: int, page: int = 1, page_size: int = 50) -
 
 @mcp.tool(description="Get time entries linked to a ConnectWise service ticket.")
 async def get_ticket_time_entries(ticket_id: int, page: int = 1, page_size: int = 50) -> dict[str, Any]:
+    """Return ticket time entries as summaries plus raw API data."""
+
     client = ConnectWiseClient()
     entries = await client.get_ticket_time_entries(ticket_id, page=page, page_size=page_size)
     return {
@@ -203,6 +246,14 @@ async def update_ticket_classifications(
     impact: str | None = None,
     source: str | None = None,
 ) -> dict[str, Any]:
+    """Patch multiple ticket classification fields and echo the requested values.
+
+    Any argument left as ``None`` is ignored, which makes the tool safe for partial updates.
+
+    Returns:
+        A tool response containing the requested field values and raw patch result.
+    """
+
     client = ConnectWiseClient()
     result = await client.update_ticket_classifications(
         ticket_id,
@@ -253,6 +304,28 @@ async def add_ticket_time_entry(
     email_contact_flag: bool = False,
     email_cc_flag: bool = False,
 ) -> dict[str, Any]:
+    """Create a time entry against a ticket and return a compact summary.
+
+    Args:
+        ticket_id: Numeric service ticket id.
+        member_identifier: ConnectWise member identifier.
+        time_start: Entry start time.
+        time_end: Optional entry end time.
+        hours_deduct: Optional hours-to-deduct value.
+        actual_hours: Optional actual-hours value.
+        billable_option: Optional billing behavior.
+        work_type: Optional work type name.
+        work_role: Optional work role name.
+        notes: Optional customer-facing notes.
+        internal_notes: Optional internal-only notes.
+        email_resource_flag: Whether to email the resource.
+        email_contact_flag: Whether to email the contact.
+        email_cc_flag: Whether to email CC recipients.
+
+    Returns:
+        A tool response with the raw API result and a normalized time-entry summary.
+    """
+
     client = ConnectWiseClient()
     entry = await client.add_time_entry(
         ticket_id=ticket_id,
