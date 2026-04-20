@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from connectwise_manage_mcp.app import mcp
-from connectwise_manage_mcp.connectwise.client import ConnectWiseClient
+from connectwise_manage_mcp.connectwise.client import ConnectWiseClient, ConnectWiseError
 
 
 def _ticket_summary(ticket: dict[str, Any]) -> dict[str, Any]:
@@ -64,6 +65,205 @@ def _time_entry_summary(entry: dict[str, Any]) -> dict[str, Any]:
         "notes": entry.get("notes"),
         "internalNotes": entry.get("internalNotes"),
     }
+
+
+def _normalize_name(value: str | None) -> str:
+    """Return a comparison-friendly representation for ConnectWise name matching."""
+
+    return (value or "").strip().casefold()
+
+
+def _find_by_name(records: list[dict[str, Any]], name: str, *, field: str = "name") -> dict[str, Any] | None:
+    """Return the first record whose chosen field matches the provided name."""
+
+    wanted = _normalize_name(name)
+    for record in records:
+        if _normalize_name(record.get(field)) == wanted:
+            return record
+    return None
+
+
+def _sorted_present_strings(records: list[dict[str, Any]], field: str = "name") -> list[str]:
+    """Collect a sorted list of non-empty string field values from raw API records."""
+
+    values: list[str] = []
+    for record in records:
+        value = record.get(field)
+        if isinstance(value, str) and value:
+            values.append(value)
+    return sorted(values)
+
+
+def _parse_iso_timestamp(value: str, field_name: str) -> None:
+    """Validate a timestamp string early so tool errors stay readable."""
+
+    candidate = value.replace("Z", "+00:00")
+    try:
+        datetime.fromisoformat(candidate)
+    except ValueError as exc:
+        raise ConnectWiseError(
+            f"{field_name} must be an ISO-8601 timestamp, for example 2026-04-20T15:30:00Z."
+        ) from exc
+
+
+async def _resolve_board(client: ConnectWiseClient, board_name: str) -> dict[str, Any]:
+    """Resolve an exact board record by name for safer board-scoped validation."""
+
+    boards = await client.list_boards(name=board_name, inactive=False, page_size=100)
+    board = _find_by_name(boards, board_name)
+    if board is None:
+        raise ConnectWiseError(
+            f"Unknown board '{board_name}'. Call list_boards first and use an exact board name."
+        )
+    return board
+
+
+async def _validate_ticket_status(
+    client: ConnectWiseClient,
+    *,
+    board_id: int,
+    board_name: str,
+    status: str,
+) -> None:
+    """Ensure a status exists on the chosen board before patching a ticket."""
+
+    statuses = await client.get_board_statuses(board_id)
+    if _find_by_name(statuses, status) is None:
+        valid_names = _sorted_present_strings(statuses)
+        raise ConnectWiseError(
+            f"Status '{status}' is not valid for board '{board_name}'. "
+            f"Call get_board_statuses or get_board_lookup first. Valid statuses: {', '.join(valid_names)}"
+        )
+
+
+async def _validate_ticket_classifications(
+    client: ConnectWiseClient,
+    *,
+    ticket: dict[str, Any],
+    board: str | None,
+    status: str | None,
+    type_name: str | None,
+    sub_type_name: str | None,
+    item_name: str | None,
+    team: str | None,
+) -> None:
+    """Preflight board-scoped classification values so write errors stay actionable."""
+
+    current_board = ticket.get("board") or {}
+    board_record = (
+        await _resolve_board(client, board)
+        if board
+        else {"id": current_board.get("id"), "name": current_board.get("name")}
+    )
+    board_id = board_record.get("id")
+    board_name = board_record.get("name")
+    if board_id is None or not board_name:
+        raise ConnectWiseError(
+            "Could not determine the ticket's board for validation. Call get_ticket first or provide a valid board name."
+        )
+
+    if status:
+        await _validate_ticket_status(client, board_id=board_id, board_name=board_name, status=status)
+
+    teams = await client.get_board_teams(board_id)
+    if team and _find_by_name(teams, team) is None:
+        valid_names = _sorted_present_strings(teams)
+        raise ConnectWiseError(
+            f"Team '{team}' is not valid for board '{board_name}'. "
+            f"Call get_board_lookup first. Valid teams: {', '.join(valid_names)}"
+        )
+
+    effective_type_name = type_name or (ticket.get("type") or {}).get("name")
+    effective_sub_type_name = sub_type_name or (ticket.get("subType") or {}).get("name")
+
+    if not any([type_name, sub_type_name, item_name]):
+        return
+
+    board_types = await client.get_board_types(board_id)
+    type_record = None
+    if effective_type_name:
+        type_record = _find_by_name(board_types, effective_type_name)
+        if type_record is None:
+            valid_names = _sorted_present_strings(board_types)
+            raise ConnectWiseError(
+                f"Type '{effective_type_name}' is not valid for board '{board_name}'. "
+                f"Call get_board_lookup first. Valid types: {', '.join(valid_names)}"
+            )
+    elif sub_type_name or item_name:
+        raise ConnectWiseError(
+            "A valid type_name is required before setting sub_type_name or item_name. "
+            "Call get_board_lookup first to choose a matching hierarchy."
+        )
+
+    subtype_record = None
+    if effective_sub_type_name:
+        assert type_record is not None
+        subtypes = await client.get_board_subtypes(board_id, type_record["id"])
+        subtype_record = _find_by_name(subtypes, effective_sub_type_name)
+        if subtype_record is None:
+            valid_names = _sorted_present_strings(subtypes)
+            raise ConnectWiseError(
+                f"Subtype '{effective_sub_type_name}' is not valid for board '{board_name}' and type '{effective_type_name}'. "
+                f"Call get_board_lookup or get_board_subtypes first. Valid subtypes: {', '.join(valid_names)}"
+            )
+    elif item_name:
+        raise ConnectWiseError(
+            "A valid sub_type_name is required before setting item_name. "
+            "Call get_board_lookup first to choose a matching subtype and item."
+        )
+
+    if item_name:
+        assert type_record is not None and subtype_record is not None
+        items = await client.get_board_items(board_id, type_record["id"], subtype_record["id"])
+        if _find_by_name(items, item_name) is None:
+            valid_names = _sorted_present_strings(items)
+            raise ConnectWiseError(
+                f"Item '{item_name}' is not valid for board '{board_name}', type '{effective_type_name}', and subtype '{effective_sub_type_name}'. "
+                f"Call get_board_lookup or get_board_items first. Valid items: {', '.join(valid_names)}"
+            )
+
+
+async def _validate_time_entry_inputs(
+    client: ConnectWiseClient,
+    *,
+    member_identifier: str,
+    time_start: str,
+    time_end: str | None,
+    work_type: str | None,
+    work_role: str | None,
+) -> None:
+    """Preflight member and work values for clearer agent-facing time-entry errors."""
+
+    _parse_iso_timestamp(time_start, "time_start")
+    if time_end:
+        _parse_iso_timestamp(time_end, "time_end")
+
+    members = await client.search_members(identifier=member_identifier, inactive=False, page_size=100)
+    member = _find_by_name(members, member_identifier, field="identifier")
+    if member is None:
+        valid_names = _sorted_present_strings(members, field="identifier")
+        suggestion = f" Nearby matches: {', '.join(valid_names)}" if valid_names else ""
+        raise ConnectWiseError(
+            f"Unknown member_identifier '{member_identifier}'. Call search_members first and use the exact identifier.{suggestion}"
+        )
+
+    if work_type:
+        work_types = await client.list_work_types(name=work_type, inactive=False, page_size=100)
+        if _find_by_name(work_types, work_type) is None:
+            valid_names = _sorted_present_strings(work_types)
+            suggestion = f" Nearby matches: {', '.join(valid_names)}" if valid_names else ""
+            raise ConnectWiseError(
+                f"Unknown work_type '{work_type}'. Call list_work_types first and use an exact name.{suggestion}"
+            )
+
+    if work_role:
+        work_roles = await client.list_work_roles(name=work_role, inactive=False, page_size=100)
+        if _find_by_name(work_roles, work_role) is None:
+            valid_names = _sorted_present_strings(work_roles)
+            suggestion = f" Nearby matches: {', '.join(valid_names)}" if valid_names else ""
+            raise ConnectWiseError(
+                f"Unknown work_role '{work_role}'. Call list_work_roles first and use an exact name.{suggestion}"
+            )
 
 
 @mcp.tool(description="Get a single ConnectWise service ticket by id.")
@@ -211,6 +411,15 @@ async def update_ticket_status(ticket_id: int, status: str) -> dict[str, Any]:
     """
 
     client = ConnectWiseClient()
+    ticket = await client.get_ticket(ticket_id)
+    board = ticket.get("board") or {}
+    board_id = board.get("id")
+    board_name = board.get("name")
+    if board_id is None or not board_name:
+        raise ConnectWiseError(
+            "Could not determine the ticket's board for status validation. Call get_ticket first and verify the ticket has a board."
+        )
+    await _validate_ticket_status(client, board_id=board_id, board_name=board_name, status=status)
     result = await client.update_ticket_status(ticket_id, status)
     return {"ok": True, "data": result, "ticketId": ticket_id, "newStatus": status}
 
@@ -281,6 +490,17 @@ async def update_ticket_classifications(
     """
 
     client = ConnectWiseClient()
+    ticket = await client.get_ticket(ticket_id)
+    await _validate_ticket_classifications(
+        client,
+        ticket=ticket,
+        board=board,
+        status=status,
+        type_name=type_name,
+        sub_type_name=sub_type_name,
+        item_name=item_name,
+        team=team,
+    )
     result = await client.update_ticket_classifications(
         ticket_id,
         status=status,
@@ -357,6 +577,14 @@ async def add_ticket_time_entry(
     """
 
     client = ConnectWiseClient()
+    await _validate_time_entry_inputs(
+        client,
+        member_identifier=member_identifier,
+        time_start=time_start,
+        time_end=time_end,
+        work_type=work_type,
+        work_role=work_role,
+    )
     entry = await client.add_time_entry(
         ticket_id=ticket_id,
         member_identifier=member_identifier,
