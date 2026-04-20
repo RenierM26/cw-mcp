@@ -30,6 +30,87 @@ That split keeps the codebase easy to reason about:
 - `models.py` holds lightweight shared shapes
 - `config.py` centralizes environment-backed settings
 
+## Common call sequences for smaller models
+
+If you are choosing tools programmatically, these flows are the safest starting points.
+
+### Create a ticket
+
+1. `search_companies` to find the numeric `company_id`
+2. optional `search_contacts` to find the numeric `contact_id`
+3. optional `list_boards` if the correct board name is uncertain
+4. `create_ticket`
+
+### Update ticket status safely
+
+1. `get_ticket` to inspect the current board
+2. `list_boards` if you need to confirm the board id
+3. `get_board_statuses` or `get_board_lookup` to fetch valid board-specific status names
+4. `update_ticket_status`
+
+### Reclassify a ticket safely
+
+1. `get_ticket` to inspect current values
+2. `list_boards` to find the numeric board id
+3. `get_board_lookup` to fetch valid status, type, subtype, item, and team names
+4. optional `get_board_subtypes` or `get_board_items` for narrower hierarchy checks
+5. `update_ticket_classifications`
+
+### Add a time entry safely
+
+1. `search_members` to find the `member_identifier`
+2. `list_work_types` to validate `work_type`
+3. `list_work_roles` to validate `work_role`
+4. `add_ticket_time_entry`
+
+## Names vs ids
+
+ConnectWise write calls mix numeric ids and human-readable names. This is the easiest place for smaller models to make mistakes.
+
+- `company_id` and `contact_id` are numeric ids
+- `board_id`, `type_id`, and `subtype_id` are numeric ids used by lookup tools
+- `board` in `create_ticket` is a board name, not a board id
+- `status` in `update_ticket_status` is a board-specific status name, not a status id
+- `board`, `status`, `type_name`, `sub_type_name`, `item_name`, `team`, `severity`, `impact`, and `source` in `update_ticket_classifications` are names, not ids
+- `member_identifier` in `add_ticket_time_entry` is a string identifier, not the numeric member id
+- `work_type` and `work_role` in `add_ticket_time_entry` are names, not ids
+
+## Tool response patterns
+
+Most tools follow one of these response shapes.
+
+### Single-record reads
+
+```json
+{
+  "ok": true,
+  "data": {"...": "raw record"},
+  "summary": {"...": "compact normalized view"}
+}
+```
+
+### Search and list tools
+
+```json
+{
+  "ok": true,
+  "count": 2,
+  "data": [{"...": "compact normalized view"}],
+  "raw": [{"...": "raw records"}]
+}
+```
+
+### Bundle tools
+
+```json
+{
+  "ok": true,
+  "ticket": {"summary": {}, "description": "...", "raw": {}},
+  "notes": {"count": 0, "data": [], "raw": []},
+  "timeEntries": {"count": 0, "data": [], "raw": []}
+}
+```
+
 ## Included tools
 
 - `get_ticket`
@@ -44,6 +125,7 @@ That split keeps the codebase easy to reason about:
 - `add_ticket_time_entry`
 - `list_boards`
 - `get_board_lookup`
+- `get_board_statuses`
 - `get_board_types`
 - `get_board_subtypes`
 - `get_board_items`
@@ -296,7 +378,7 @@ The quickest tool for AI-driven review is `get_ticket_bundle`, which returns the
 
 The safest classification flow is usually:
 1. `list_boards`
-2. `get_board_lookup`
+2. `get_board_statuses` or `get_board_lookup`
 3. optionally `get_board_types`, `get_board_subtypes`, or `get_board_items` for explicit hierarchy calls
 4. `update_ticket_classifications`
 

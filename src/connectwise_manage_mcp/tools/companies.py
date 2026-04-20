@@ -39,7 +39,7 @@ async def get_company(company_id: int) -> dict[str, Any]:
     return {"ok": True, "data": company, "summary": _company_summary(company)}
 
 
-@mcp.tool(description="Search ConnectWise companies by name or identifier.")
+@mcp.tool(description="Search ConnectWise companies by name or identifier. Use this before create_ticket when you need the numeric company_id, because create_ticket expects company_id and not a company name.")
 async def search_companies(
     name: str | None = None,
     identifier: str | None = None,
