@@ -6,6 +6,14 @@ from connectwise_manage_mcp.app import mcp
 from connectwise_manage_mcp.connectwise.client import ConnectWiseClient
 
 
+def _with_optional_raw(result: dict[str, Any], raw: Any, *, include_raw: bool) -> dict[str, Any]:
+    """Attach raw API payloads only when callers explicitly request them."""
+
+    if include_raw:
+        result["raw"] = raw
+    return result
+
+
 def _board_summary(board: dict[str, Any]) -> dict[str, Any]:
     """Normalize a board record for lookup-oriented responses."""
 
@@ -96,17 +104,17 @@ async def list_boards(
     inactive: bool | None = False,
     page: int = 1,
     page_size: int = 50,
+    include_raw: bool = False,
 ) -> dict[str, Any]:
     """List boards and return both summaries and raw API data."""
 
     client = ConnectWiseClient()
     boards = await client.list_boards(name=name, inactive=inactive, page=page, page_size=page_size)
-    return {
+    return _with_optional_raw({
         "ok": True,
         "count": len(boards),
         "data": [_board_summary(board) for board in boards],
-        "raw": boards,
-    }
+    }, boards, include_raw=include_raw)
 
 
 @mcp.tool(description="Get the main lookup sets for a service board before updating ticket classifications. Expects numeric ids: board_id is required, type_id is only for subtype lookup, and subtype_id is only for item lookup. Use this before write calls that need valid board-specific status, type, subtype, item, or team values.")
@@ -114,6 +122,7 @@ async def get_board_lookup(
     board_id: int,
     type_id: int | None = None,
     subtype_id: int | None = None,
+    include_raw: bool = False,
 ) -> dict[str, Any]:
     """Fetch the main lookup sets needed to classify tickets on a board.
 
@@ -121,6 +130,7 @@ async def get_board_lookup(
         board_id: Numeric board id.
         type_id: Optional numeric type id used to also fetch subtypes.
         subtype_id: Optional numeric subtype id used to also fetch items.
+        include_raw: When true, include raw lookup payloads alongside normalized summaries.
 
     Returns:
         A combined lookup payload with normalized summaries plus raw API data.
@@ -142,32 +152,34 @@ async def get_board_lookup(
         "statuses": [_board_status_summary(status) for status in statuses],
         "types": [_board_type_summary(board_type) for board_type in types],
         "teams": [_board_team_summary(team) for team in teams],
-        "raw": {
-            "statuses": statuses,
-            "types": types,
-            "teams": teams,
-        },
+    }
+
+    raw_payload: dict[str, Any] = {
+        "statuses": statuses,
+        "types": types,
+        "teams": teams,
     }
 
     if type_id is not None:
         subtypes = await client.get_board_subtypes(board_id, type_id)
         result["subtypes"] = [_board_type_summary(subtype) for subtype in subtypes]
-        result["raw"]["subtypes"] = subtypes
+        raw_payload["subtypes"] = subtypes
 
         if subtype_id is not None:
             items = await client.get_board_items(board_id, type_id, subtype_id)
             result["items"] = [_board_type_summary(item) for item in items]
-            result["raw"]["items"] = items
+            raw_payload["items"] = items
 
-    return result
+    return _with_optional_raw(result, raw_payload, include_raw=include_raw)
 
 
 @mcp.tool(description="Get service board statuses for a board id. Expects a numeric board_id and returns status ids plus names. Usually call list_boards first if you only know the board name, then use the returned status names in update_ticket_status or update_ticket_classifications.")
-async def get_board_statuses(board_id: int) -> dict[str, Any]:
+async def get_board_statuses(board_id: int, include_raw: bool = False) -> dict[str, Any]:
     """Fetch statuses for a specific service board.
 
     Args:
         board_id: Numeric board id.
+        include_raw: When true, include the full raw ConnectWise records.
 
     Returns:
         A tool response containing normalized status summaries and raw records.
@@ -180,61 +192,62 @@ async def get_board_statuses(board_id: int) -> dict[str, Any]:
 
     client = ConnectWiseClient()
     statuses = await client.get_board_statuses(board_id)
-    return {
+    return _with_optional_raw({
         "ok": True,
         "boardId": board_id,
         "count": len(statuses),
         "data": [_board_status_summary(status) for status in statuses],
-        "raw": statuses,
-    }
+    }, statuses, include_raw=include_raw)
 
 
 @mcp.tool(description="Get service board types for a board id. Expects a numeric board_id and returns type ids plus names. Usually call list_boards first if you only know the board name.")
-async def get_board_types(board_id: int) -> dict[str, Any]:
+async def get_board_types(board_id: int, include_raw: bool = False) -> dict[str, Any]:
     """Fetch board types for a specific service board."""
 
     client = ConnectWiseClient()
     board_types = await client.get_board_types(board_id)
-    return {
+    return _with_optional_raw({
         "ok": True,
         "boardId": board_id,
         "count": len(board_types),
         "data": [_board_type_summary(board_type) for board_type in board_types],
-        "raw": board_types,
-    }
+    }, board_types, include_raw=include_raw)
 
 
 @mcp.tool(description="Get service board subtypes for a numeric board_id and type_id pair. Use this when a smaller hierarchy-specific lookup is easier than get_board_lookup.")
-async def get_board_subtypes(board_id: int, type_id: int) -> dict[str, Any]:
+async def get_board_subtypes(board_id: int, type_id: int, include_raw: bool = False) -> dict[str, Any]:
     """Fetch board subtypes for a specific board type."""
 
     client = ConnectWiseClient()
     subtypes = await client.get_board_subtypes(board_id, type_id)
-    return {
+    return _with_optional_raw({
         "ok": True,
         "boardId": board_id,
         "typeId": type_id,
         "count": len(subtypes),
         "data": [_board_type_summary(subtype) for subtype in subtypes],
-        "raw": subtypes,
-    }
+    }, subtypes, include_raw=include_raw)
 
 
 @mcp.tool(description="Get service board items for a numeric board_id, type_id, and subtype_id combination. Returns item ids plus names that can then be used to choose the item name for ticket updates.")
-async def get_board_items(board_id: int, type_id: int, subtype_id: int) -> dict[str, Any]:
+async def get_board_items(
+    board_id: int,
+    type_id: int,
+    subtype_id: int,
+    include_raw: bool = False,
+) -> dict[str, Any]:
     """Fetch board items for a specific board type and subtype."""
 
     client = ConnectWiseClient()
     items = await client.get_board_items(board_id, type_id, subtype_id)
-    return {
+    return _with_optional_raw({
         "ok": True,
         "boardId": board_id,
         "typeId": type_id,
         "subtypeId": subtype_id,
         "count": len(items),
         "data": [_board_type_summary(item) for item in items],
-        "raw": items,
-    }
+    }, items, include_raw=include_raw)
 
 
 @mcp.tool(description="Search ConnectWise members before ownership or time-entry workflows. Use this to find the member_identifier string required by add_ticket_time_entry. Do not confuse member_identifier with the numeric member id.")
@@ -244,6 +257,7 @@ async def search_members(
     inactive: bool | None = False,
     page: int = 1,
     page_size: int = 50,
+    include_raw: bool = False,
 ) -> dict[str, Any]:
     """Search members and return both summaries and raw API data.
 
@@ -253,6 +267,7 @@ async def search_members(
         inactive: Whether to include inactive members.
         page: 1-based results page.
         page_size: Requested page size.
+        include_raw: When true, include the full raw ConnectWise records.
     """
 
     client = ConnectWiseClient()
@@ -263,12 +278,11 @@ async def search_members(
         page=page,
         page_size=page_size,
     )
-    return {
+    return _with_optional_raw({
         "ok": True,
         "count": len(members),
         "data": [_member_summary(member) for member in members],
-        "raw": members,
-    }
+    }, members, include_raw=include_raw)
 
 
 @mcp.tool(description="List or search ConnectWise work types before creating time entries. add_ticket_time_entry expects a work type name, so use this first when the valid names are uncertain.")
@@ -277,6 +291,7 @@ async def list_work_types(
     inactive: bool | None = False,
     page: int = 1,
     page_size: int = 50,
+    include_raw: bool = False,
 ) -> dict[str, Any]:
     """List work types and return both summaries and raw API data.
 
@@ -290,12 +305,11 @@ async def list_work_types(
         page=page,
         page_size=page_size,
     )
-    return {
+    return _with_optional_raw({
         "ok": True,
         "count": len(work_types),
         "data": [_work_type_summary(item) for item in work_types],
-        "raw": work_types,
-    }
+    }, work_types, include_raw=include_raw)
 
 
 @mcp.tool(description="List or search ConnectWise work roles before creating time entries. add_ticket_time_entry expects a work role name, so use this first when the valid names are uncertain.")
@@ -304,6 +318,7 @@ async def list_work_roles(
     inactive: bool | None = False,
     page: int = 1,
     page_size: int = 50,
+    include_raw: bool = False,
 ) -> dict[str, Any]:
     """List work roles and return both summaries and raw API data.
 
@@ -317,9 +332,8 @@ async def list_work_roles(
         page=page,
         page_size=page_size,
     )
-    return {
+    return _with_optional_raw({
         "ok": True,
         "count": len(work_roles),
         "data": [_work_role_summary(item) for item in work_roles],
-        "raw": work_roles,
-    }
+    }, work_roles, include_raw=include_raw)

@@ -7,6 +7,14 @@ from connectwise_manage_mcp.app import mcp
 from connectwise_manage_mcp.connectwise.client import ConnectWiseClient, ConnectWiseError
 
 
+def _with_optional_raw(result: dict[str, Any], raw: Any, *, include_raw: bool) -> dict[str, Any]:
+    """Attach raw API payloads only when callers explicitly request them."""
+
+    if include_raw:
+        result["raw"] = raw
+    return result
+
+
 def _ticket_summary(ticket: dict[str, Any]) -> dict[str, Any]:
     """Normalize a raw ticket into a compact summary for tool responses."""
 
@@ -280,6 +288,7 @@ async def get_ticket_bundle(
     ticket_id: int,
     notes_page_size: int = 50,
     time_entries_page_size: int = 50,
+    include_raw: bool = False,
 ) -> dict[str, Any]:
     """Fetch a ticket together with its notes and time entries in one call.
 
@@ -287,6 +296,7 @@ async def get_ticket_bundle(
         ticket_id: Numeric service ticket id.
         notes_page_size: Max notes to fetch for the bundle.
         time_entries_page_size: Max time entries to fetch for the bundle.
+        include_raw: When true, include raw ticket, note, and time-entry payloads.
 
     Returns:
         A combined payload containing normalized summaries plus raw API data.
@@ -305,21 +315,18 @@ async def get_ticket_bundle(
 
     return {
         "ok": True,
-        "ticket": {
+        "ticket": _with_optional_raw({
             "summary": _ticket_summary(ticket),
             "description": description,
-            "raw": ticket,
-        },
-        "notes": {
+        }, ticket, include_raw=include_raw),
+        "notes": _with_optional_raw({
             "count": len(notes),
             "data": [_note_summary(note) for note in notes],
-            "raw": notes,
-        },
-        "timeEntries": {
+        }, notes, include_raw=include_raw),
+        "timeEntries": _with_optional_raw({
             "count": len(time_entries),
             "data": [_time_entry_summary(entry) for entry in time_entries],
-            "raw": time_entries,
-        },
+        }, time_entries, include_raw=include_raw),
     }
 
 
@@ -331,6 +338,7 @@ async def search_tickets(
     summary: str | None = None,
     page: int = 1,
     page_size: int = 50,
+    include_raw: bool = False,
 ) -> dict[str, Any]:
     """Search tickets and return both summaries and raw API data.
 
@@ -341,6 +349,7 @@ async def search_tickets(
         summary: Optional partial summary filter.
         page: 1-based results page.
         page_size: Requested page size.
+        include_raw: When true, include the full raw ConnectWise records.
 
     Returns:
         A tool response with normalized ticket summaries and raw records.
@@ -355,12 +364,11 @@ async def search_tickets(
         page=page,
         page_size=page_size,
     )
-    return {
+    return _with_optional_raw({
         "ok": True,
         "count": len(tickets),
         "data": [_ticket_summary(ticket) for ticket in tickets],
-        "raw": tickets,
-    }
+    }, tickets, include_raw=include_raw)
 
 
 @mcp.tool(description="Create a new ConnectWise service ticket. Expects company_id as a numeric id and board as a board name. Usually call search_companies first to find company_id, optional search_contacts to find contact_id, and list_boards if the board name is uncertain.")
@@ -434,31 +442,39 @@ async def add_ticket_note(ticket_id: int, text: str, internal: bool = True) -> d
 
 
 @mcp.tool(description="Get notes for a ConnectWise service ticket.")
-async def get_ticket_notes(ticket_id: int, page: int = 1, page_size: int = 50) -> dict[str, Any]:
+async def get_ticket_notes(
+    ticket_id: int,
+    page: int = 1,
+    page_size: int = 50,
+    include_raw: bool = False,
+) -> dict[str, Any]:
     """Return ticket notes as summaries plus raw API data."""
 
     client = ConnectWiseClient()
     notes = await client.get_ticket_notes(ticket_id, page=page, page_size=page_size)
-    return {
+    return _with_optional_raw({
         "ok": True,
         "count": len(notes),
         "data": [_note_summary(note) for note in notes],
-        "raw": notes,
-    }
+    }, notes, include_raw=include_raw)
 
 
 @mcp.tool(description="Get time entries linked to a ConnectWise service ticket.")
-async def get_ticket_time_entries(ticket_id: int, page: int = 1, page_size: int = 50) -> dict[str, Any]:
+async def get_ticket_time_entries(
+    ticket_id: int,
+    page: int = 1,
+    page_size: int = 50,
+    include_raw: bool = False,
+) -> dict[str, Any]:
     """Return ticket time entries as summaries plus raw API data."""
 
     client = ConnectWiseClient()
     entries = await client.get_ticket_time_entries(ticket_id, page=page, page_size=page_size)
-    return {
+    return _with_optional_raw({
         "ok": True,
         "count": len(entries),
         "data": [_time_entry_summary(entry) for entry in entries],
-        "raw": entries,
-    }
+    }, entries, include_raw=include_raw)
 
 
 @mcp.tool(description="Update ticket classification fields like status, priority, board, type, subtype, item, team, severity, impact, or source. Expects board, status, type_name, sub_type_name, item_name, team, severity, impact, and source as names, not ids. Usually call list_boards and get_board_lookup first so the selected values match the board hierarchy.")
