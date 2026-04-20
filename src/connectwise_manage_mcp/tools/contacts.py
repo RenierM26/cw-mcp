@@ -7,6 +7,12 @@ from connectwise_manage_mcp.connectwise.client import ConnectWiseClient
 
 
 def _contact_summary(contact: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a raw contact record into a compact, tool-friendly shape.
+
+    The helper prefers communication items when present so the summary exposes the
+    most useful email and phone values without extra parsing downstream.
+    """
+
     company = contact.get("company") or {}
     communication_items = contact.get("communicationItems") or []
     email = next(
@@ -44,6 +50,19 @@ async def search_contacts(
     page: int = 1,
     page_size: int = 50,
 ) -> dict[str, Any]:
+    """Search contacts and return both summaries and raw API data.
+
+    Args:
+        company_id: Optional numeric company id filter.
+        name: Optional partial contact-name filter.
+        email: Optional partial email filter.
+        page: 1-based results page.
+        page_size: Requested page size.
+
+    Returns:
+        A tool response containing compact contact summaries and raw records.
+    """
+
     client = ConnectWiseClient()
     contacts = await client.search_contacts(
         company_id=company_id,

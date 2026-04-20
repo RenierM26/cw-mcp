@@ -7,6 +7,8 @@ from connectwise_manage_mcp.connectwise.client import ConnectWiseClient
 
 
 def _board_summary(board: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a board record for lookup-oriented responses."""
+
     return {
         "id": board.get("id"),
         "name": board.get("name"),
@@ -18,6 +20,8 @@ def _board_summary(board: dict[str, Any]) -> dict[str, Any]:
 
 
 def _board_status_summary(status: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a board status record for lookup-oriented responses."""
+
     board = status.get("board") or {}
     return {
         "id": status.get("id"),
@@ -30,6 +34,8 @@ def _board_status_summary(status: dict[str, Any]) -> dict[str, Any]:
 
 
 def _board_type_summary(item: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a board type, subtype, or item record."""
+
     return {
         "id": item.get("id"),
         "name": item.get("name"),
@@ -39,6 +45,8 @@ def _board_type_summary(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _board_team_summary(team: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a board team record for lookup-oriented responses."""
+
     return {
         "id": team.get("id"),
         "name": team.get("name"),
@@ -48,6 +56,8 @@ def _board_team_summary(team: dict[str, Any]) -> dict[str, Any]:
 
 
 def _member_summary(member: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a member record for assignment and time-entry workflows."""
+
     return {
         "id": member.get("id"),
         "identifier": member.get("identifier"),
@@ -60,6 +70,8 @@ def _member_summary(member: dict[str, Any]) -> dict[str, Any]:
 
 
 def _work_type_summary(work_type: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a work type record for time-entry workflows."""
+
     return {
         "id": work_type.get("id"),
         "name": work_type.get("name"),
@@ -69,6 +81,8 @@ def _work_type_summary(work_type: dict[str, Any]) -> dict[str, Any]:
 
 
 def _work_role_summary(work_role: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a work role record for time-entry workflows."""
+
     return {
         "id": work_role.get("id"),
         "name": work_role.get("name"),
@@ -83,6 +97,8 @@ async def list_boards(
     page: int = 1,
     page_size: int = 50,
 ) -> dict[str, Any]:
+    """List boards and return both summaries and raw API data."""
+
     client = ConnectWiseClient()
     boards = await client.list_boards(name=name, inactive=inactive, page=page, page_size=page_size)
     return {
@@ -99,6 +115,17 @@ async def get_board_lookup(
     type_id: int | None = None,
     subtype_id: int | None = None,
 ) -> dict[str, Any]:
+    """Fetch the main lookup sets needed to classify tickets on a board.
+
+    Args:
+        board_id: Numeric board id.
+        type_id: Optional type id used to also fetch subtypes.
+        subtype_id: Optional subtype id used to also fetch items.
+
+    Returns:
+        A combined lookup payload with normalized summaries plus raw API data.
+    """
+
     client = ConnectWiseClient()
     statuses = await client.get_board_statuses(board_id)
     types = await client.get_board_types(board_id)
@@ -132,6 +159,8 @@ async def get_board_lookup(
 
 @mcp.tool(description="Get service board types for a specific ConnectWise service board.")
 async def get_board_types(board_id: int) -> dict[str, Any]:
+    """Fetch board types for a specific service board."""
+
     client = ConnectWiseClient()
     board_types = await client.get_board_types(board_id)
     return {
@@ -145,6 +174,8 @@ async def get_board_types(board_id: int) -> dict[str, Any]:
 
 @mcp.tool(description="Get service board subtypes for a specific board type.")
 async def get_board_subtypes(board_id: int, type_id: int) -> dict[str, Any]:
+    """Fetch board subtypes for a specific board type."""
+
     client = ConnectWiseClient()
     subtypes = await client.get_board_subtypes(board_id, type_id)
     return {
@@ -159,6 +190,8 @@ async def get_board_subtypes(board_id: int, type_id: int) -> dict[str, Any]:
 
 @mcp.tool(description="Get service board items for a specific board type and subtype.")
 async def get_board_items(board_id: int, type_id: int, subtype_id: int) -> dict[str, Any]:
+    """Fetch board items for a specific board type and subtype."""
+
     client = ConnectWiseClient()
     items = await client.get_board_items(board_id, type_id, subtype_id)
     return {
@@ -180,6 +213,16 @@ async def search_members(
     page: int = 1,
     page_size: int = 50,
 ) -> dict[str, Any]:
+    """Search members and return both summaries and raw API data.
+
+    Args:
+        identifier: Optional partial identifier match.
+        name: Optional partial first name, last name, or email match.
+        inactive: Whether to include inactive members.
+        page: 1-based results page.
+        page_size: Requested page size.
+    """
+
     client = ConnectWiseClient()
     members = await client.search_members(
         identifier=identifier,
@@ -203,6 +246,11 @@ async def list_work_types(
     page: int = 1,
     page_size: int = 50,
 ) -> dict[str, Any]:
+    """List work types and return both summaries and raw API data.
+
+    This is mainly useful before creating time entries so callers can validate names.
+    """
+
     client = ConnectWiseClient()
     work_types = await client.list_work_types(
         name=name,
@@ -225,6 +273,11 @@ async def list_work_roles(
     page: int = 1,
     page_size: int = 50,
 ) -> dict[str, Any]:
+    """List work roles and return both summaries and raw API data.
+
+    This is mainly useful before creating time entries so callers can validate names.
+    """
+
     client = ConnectWiseClient()
     work_roles = await client.list_work_roles(
         name=name,

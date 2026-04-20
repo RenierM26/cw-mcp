@@ -4,6 +4,17 @@
     "dockerfile": "../Dockerfile",
     "context": ".."
   },
+  "containerEnv": {
+    "AUTH_ENABLED": "false"
+  },
+  "overrideCommand": true,
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": {
+      "label": "ConnectWise MCP",
+      "onAutoForward": "ignore"
+    }
+  },
   "customizations": {
     "vscode": {
       "extensions": [
@@ -16,5 +27,6 @@
   "remoteEnv": {
     "PYTHONPATH": "/app/src"
   },
-  "postCreateCommand": "pip install --no-cache-dir -e .[dev]"
+  "postCreateCommand": "pip install --no-cache-dir -e .[dev]",
+  "postStartCommand": "bash -lc 'pkill -f cwmcp-http || true; nohup cwmcp-http >/tmp/cwmcp-http.log 2>&1 &'"
 }
