@@ -1,0 +1,20 @@
+{
+  "name": "connectwise-manage-mcp",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": ".."
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff"
+      ]
+    }
+  },
+  "remoteEnv": {
+    "PYTHONPATH": "/app/src"
+  },
+  "postCreateCommand": "pip install --no-cache-dir -e .[dev]"
+}
