@@ -109,7 +109,7 @@ async def list_boards(
     }
 
 
-@mcp.tool(description="Get statuses, types, teams, and optional subtype/item hierarchy for a service board.")
+@mcp.tool(description="Get the main lookup sets for a service board before updating ticket classifications. Expects numeric ids: board_id is required, type_id is only for subtype lookup, and subtype_id is only for item lookup. Use this before write calls that need valid board-specific status, type, subtype, item, or team values.")
 async def get_board_lookup(
     board_id: int,
     type_id: int | None = None,
@@ -119,11 +119,16 @@ async def get_board_lookup(
 
     Args:
         board_id: Numeric board id.
-        type_id: Optional type id used to also fetch subtypes.
-        subtype_id: Optional subtype id used to also fetch items.
+        type_id: Optional numeric type id used to also fetch subtypes.
+        subtype_id: Optional numeric subtype id used to also fetch items.
 
     Returns:
         A combined lookup payload with normalized summaries plus raw API data.
+
+    Prerequisites:
+        Call ``list_boards`` first if the correct ``board_id`` is not already known.
+        Write tools such as ``update_ticket_classifications`` use names, not ids, so this
+        lookup is the safest way to discover valid names before patching a ticket.
     """
 
     client = ConnectWiseClient()
@@ -157,7 +162,34 @@ async def get_board_lookup(
     return result
 
 
-@mcp.tool(description="Get service board types for a specific ConnectWise service board.")
+@mcp.tool(description="Get service board statuses for a board id. Expects a numeric board_id and returns status ids plus names. Usually call list_boards first if you only know the board name, then use the returned status names in update_ticket_status or update_ticket_classifications.")
+async def get_board_statuses(board_id: int) -> dict[str, Any]:
+    """Fetch statuses for a specific service board.
+
+    Args:
+        board_id: Numeric board id.
+
+    Returns:
+        A tool response containing normalized status summaries and raw records.
+
+    Prerequisites:
+        Call ``list_boards`` first if the correct ``board_id`` is not already known.
+        Status write tools expect status names, not ids, so this tool is best used to
+        discover the valid board-specific names before updating a ticket.
+    """
+
+    client = ConnectWiseClient()
+    statuses = await client.get_board_statuses(board_id)
+    return {
+        "ok": True,
+        "boardId": board_id,
+        "count": len(statuses),
+        "data": [_board_status_summary(status) for status in statuses],
+        "raw": statuses,
+    }
+
+
+@mcp.tool(description="Get service board types for a board id. Expects a numeric board_id and returns type ids plus names. Usually call list_boards first if you only know the board name.")
 async def get_board_types(board_id: int) -> dict[str, Any]:
     """Fetch board types for a specific service board."""
 
@@ -172,7 +204,7 @@ async def get_board_types(board_id: int) -> dict[str, Any]:
     }
 
 
-@mcp.tool(description="Get service board subtypes for a specific board type.")
+@mcp.tool(description="Get service board subtypes for a numeric board_id and type_id pair. Use this when a smaller hierarchy-specific lookup is easier than get_board_lookup.")
 async def get_board_subtypes(board_id: int, type_id: int) -> dict[str, Any]:
     """Fetch board subtypes for a specific board type."""
 
@@ -188,7 +220,7 @@ async def get_board_subtypes(board_id: int, type_id: int) -> dict[str, Any]:
     }
 
 
-@mcp.tool(description="Get service board items for a specific board type and subtype.")
+@mcp.tool(description="Get service board items for a numeric board_id, type_id, and subtype_id combination. Returns item ids plus names that can then be used to choose the item name for ticket updates.")
 async def get_board_items(board_id: int, type_id: int, subtype_id: int) -> dict[str, Any]:
     """Fetch board items for a specific board type and subtype."""
 
@@ -205,7 +237,7 @@ async def get_board_items(board_id: int, type_id: int, subtype_id: int) -> dict[
     }
 
 
-@mcp.tool(description="Search ConnectWise members for time entry assignment or ownership workflows.")
+@mcp.tool(description="Search ConnectWise members before ownership or time-entry workflows. Use this to find the member_identifier string required by add_ticket_time_entry. Do not confuse member_identifier with the numeric member id.")
 async def search_members(
     identifier: str | None = None,
     name: str | None = None,
@@ -239,7 +271,7 @@ async def search_members(
     }
 
 
-@mcp.tool(description="List or search ConnectWise work types for time entry creation.")
+@mcp.tool(description="List or search ConnectWise work types before creating time entries. add_ticket_time_entry expects a work type name, so use this first when the valid names are uncertain.")
 async def list_work_types(
     name: str | None = None,
     inactive: bool | None = False,
@@ -266,7 +298,7 @@ async def list_work_types(
     }
 
 
-@mcp.tool(description="List or search ConnectWise work roles for time entry creation.")
+@mcp.tool(description="List or search ConnectWise work roles before creating time entries. add_ticket_time_entry expects a work role name, so use this first when the valid names are uncertain.")
 async def list_work_roles(
     name: str | None = None,
     inactive: bool | None = False,

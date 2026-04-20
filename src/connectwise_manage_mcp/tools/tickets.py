@@ -163,7 +163,7 @@ async def search_tickets(
     }
 
 
-@mcp.tool(description="Create a new ConnectWise service ticket.")
+@mcp.tool(description="Create a new ConnectWise service ticket. Expects company_id as a numeric id and board as a board name. Usually call search_companies first to find company_id, optional search_contacts to find contact_id, and list_boards if the board name is uncertain.")
 async def create_ticket(
     company_id: int,
     board: str,
@@ -172,7 +172,21 @@ async def create_ticket(
     contact_id: int | None = None,
     priority: str | None = None,
 ) -> dict[str, Any]:
-    """Create a ticket and include a compact summary of the created record."""
+    """Create a ticket and include a compact summary of the created record.
+
+    Args:
+        company_id: Numeric ConnectWise company id, not company name.
+        board: Service board name, not board id.
+        summary: Ticket summary line.
+        initial_description: Initial ticket description/body.
+        contact_id: Optional numeric ConnectWise contact id.
+        priority: Optional priority name.
+
+    Prerequisites:
+        Use ``search_companies`` first if the company id is not already known.
+        Use ``search_contacts`` first if a contact id should be attached.
+        Use ``list_boards`` first if the exact board name is uncertain.
+    """
 
     client = ConnectWiseClient()
     ticket = await client.create_ticket(
@@ -186,9 +200,15 @@ async def create_ticket(
     return {"ok": True, "data": ticket, "summary": _ticket_summary(ticket)}
 
 
-@mcp.tool(description="Update the status of an existing ConnectWise service ticket.")
+@mcp.tool(description="Update only the status of an existing ConnectWise service ticket. Expects status as a board-specific status name, not a status id. Usually call get_ticket and then get_board_statuses or get_board_lookup first if the valid status names are uncertain.")
 async def update_ticket_status(ticket_id: int, status: str) -> dict[str, Any]:
-    """Update only the ticket status and echo the requested change."""
+    """Update only the ticket status and echo the requested change.
+
+    Prerequisites:
+        Status names are board-specific in ConnectWise. Use ``get_ticket`` to inspect the
+        current board, then ``get_board_statuses`` or ``get_board_lookup`` to choose a valid
+        status name before calling this tool.
+    """
 
     client = ConnectWiseClient()
     result = await client.update_ticket_status(ticket_id, status)
@@ -232,7 +252,7 @@ async def get_ticket_time_entries(ticket_id: int, page: int = 1, page_size: int 
     }
 
 
-@mcp.tool(description="Update ticket classification fields like status, priority, board, type, subtype, item, team, severity, impact, or source.")
+@mcp.tool(description="Update ticket classification fields like status, priority, board, type, subtype, item, team, severity, impact, or source. Expects board, status, type_name, sub_type_name, item_name, team, severity, impact, and source as names, not ids. Usually call list_boards and get_board_lookup first so the selected values match the board hierarchy.")
 async def update_ticket_classifications(
     ticket_id: int,
     status: str | None = None,
@@ -249,6 +269,12 @@ async def update_ticket_classifications(
     """Patch multiple ticket classification fields and echo the requested values.
 
     Any argument left as ``None`` is ignored, which makes the tool safe for partial updates.
+
+    Prerequisites:
+        Use ``get_ticket`` to inspect the current classification state.
+        Use ``list_boards`` to find the board id when only the board name is known.
+        Use ``get_board_lookup`` to discover valid board-specific status, type, subtype,
+        item, and team names before patching. This tool expects names, not ids.
 
     Returns:
         A tool response containing the requested field values and raw patch result.
@@ -287,7 +313,7 @@ async def update_ticket_classifications(
     }
 
 
-@mcp.tool(description="Add a time entry against a ConnectWise service ticket.")
+@mcp.tool(description="Add a time entry against a ConnectWise service ticket. Expects member_identifier as the ConnectWise member identifier string, not the numeric member id. work_type and work_role are names. Usually call search_members, list_work_types, and list_work_roles first if those values are uncertain.")
 async def add_ticket_time_entry(
     ticket_id: int,
     member_identifier: str,
@@ -308,9 +334,9 @@ async def add_ticket_time_entry(
 
     Args:
         ticket_id: Numeric service ticket id.
-        member_identifier: ConnectWise member identifier.
-        time_start: Entry start time.
-        time_end: Optional entry end time.
+        member_identifier: ConnectWise member identifier string, not member id.
+        time_start: Entry start time as an ISO-8601 timestamp, for example ``2026-04-20T15:30:00Z``.
+        time_end: Optional entry end time as an ISO-8601 timestamp.
         hours_deduct: Optional hours-to-deduct value.
         actual_hours: Optional actual-hours value.
         billable_option: Optional billing behavior.
@@ -321,6 +347,10 @@ async def add_ticket_time_entry(
         email_resource_flag: Whether to email the resource.
         email_contact_flag: Whether to email the contact.
         email_cc_flag: Whether to email CC recipients.
+
+    Prerequisites:
+        Use ``search_members`` first if the member identifier is not already known.
+        Use ``list_work_types`` and ``list_work_roles`` first if the valid names are uncertain.
 
     Returns:
         A tool response with the raw API result and a normalized time-entry summary.

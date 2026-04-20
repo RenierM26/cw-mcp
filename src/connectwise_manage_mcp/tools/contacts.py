@@ -42,7 +42,7 @@ def _contact_summary(contact: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@mcp.tool(description="Search ConnectWise contacts by company, name, or email.")
+@mcp.tool(description="Search ConnectWise contacts by company, name, or email. Use this before create_ticket when you need a numeric contact_id. If filtering by company_id, pass the numeric ConnectWise company id, not the company name.")
 async def search_contacts(
     company_id: int | None = None,
     name: str | None = None,
@@ -53,11 +53,15 @@ async def search_contacts(
     """Search contacts and return both summaries and raw API data.
 
     Args:
-        company_id: Optional numeric company id filter.
+        company_id: Optional numeric company id filter, not company name.
         name: Optional partial contact-name filter.
         email: Optional partial email filter.
         page: 1-based results page.
         page_size: Requested page size.
+
+    Prerequisites:
+        Use ``search_companies`` first if you only know the company name and need the
+        numeric ``company_id`` filter.
 
     Returns:
         A tool response containing compact contact summaries and raw records.
