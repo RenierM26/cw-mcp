@@ -210,7 +210,7 @@ async def test_add_time_entry_only_sends_optional_fields_when_supplied(
         "member": {"identifier": "helpdesk1"},
         "timeStart": "2026-04-20T15:30:00Z",
         "actualHours": 0.25,
-        "locationId": 7,
+        "location": {"id": 7},
         "workType": {"name": "Remote Support"},
         "notes": "Worked issue",
         "emailContactFlag": True,
