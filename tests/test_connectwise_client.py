@@ -270,7 +270,8 @@ async def test_get_board_subtypes_uses_board_level_endpoint_and_filters_by_type(
 
     assert calls[0]["url"].endswith("/service/boards/12/subtypes")
     assert calls[0]["params"] == {
-        "conditions": "inactiveFlag=false and typeAssociation/id=3",
+        "conditions": "inactiveFlag=false",
+        "childConditions": "typeAssociation/id=3",
         "fields": "id,name",
         "orderBy": "name asc",
     }
@@ -285,8 +286,9 @@ async def test_get_board_items_uses_board_level_endpoint_and_filters_by_subtype_
         lambda method, url, **kwargs: FakeResponse(
             200,
             json_data=[
-                {"id": 14, "name": "VPN"},
-                {"id": 16, "name": "Fallback Shape"},
+                {"item": {"id": 14, "name": "VPN"}},
+                {"item": {"id": 16, "name": "Fallback Shape"}},
+                {"item": {"id": 14, "name": "VPN"}},
             ],
         ),
     )
@@ -294,11 +296,11 @@ async def test_get_board_items_uses_board_level_endpoint_and_filters_by_subtype_
     client = ConnectWiseClient()
     items = await client.get_board_items(12, 3, 9)
 
-    assert calls[0]["url"].endswith("/service/boards/12/items")
+    assert calls[0]["url"].endswith("/service/boards/12/typeSubTypeItemAssociations")
     assert calls[0]["params"] == {
-        "conditions": "inactiveFlag=false and subTypeAssociation/id=9",
-        "fields": "id,name",
-        "orderBy": "name asc",
+        "childConditions": "type/id=3 and subType/id=9 and item/inactiveFlag=false",
+        "fields": "item/id,item/name",
+        "orderBy": "item/name asc",
     }
     assert [item["id"] for item in items] == [14, 16]
 
