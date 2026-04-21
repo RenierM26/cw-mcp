@@ -53,8 +53,11 @@ If you are choosing tools programmatically, these flows are the safest starting 
 1. `get_ticket` to inspect current values
 2. `list_boards` to find the numeric board id
 3. `get_board_lookup` to fetch valid status, type, subtype, item, and team names
-4. optional `get_board_subtypes` or `get_board_items` for narrower hierarchy checks
-5. `update_ticket_classifications`
+4. if changing hierarchy fields, choose them in order: `type_name` -> `sub_type_name` -> `item_name`
+5. optional `get_board_subtypes` or `get_board_items` for narrower hierarchy checks
+6. `update_ticket_classifications`
+
+Small-model hint: `item_name` is not a board-wide independent choice. It only becomes valid after a matching `type_name` and `sub_type_name` are chosen.
 
 ### Add a time entry safely
 
@@ -75,6 +78,8 @@ ConnectWise write calls mix numeric ids and human-readable names. This is the ea
 - `board` in `create_ticket` is a board name, not a board id
 - `status` in `update_ticket_status` is a board-specific status name, not a status id
 - `board`, `status`, `type_name`, `sub_type_name`, `item_name`, `team`, `severity`, `impact`, and `source` in `update_ticket_classifications` are names, not ids
+- `type_name`, `sub_type_name`, and `item_name` in `update_ticket_classifications` are a hierarchy, not three independent fields
+- choose `type_name` first, then `sub_type_name`, then `item_name`
 - `member_identifier` in `add_ticket_time_entry` is a string identifier, not the numeric member id
 - `location_id` in `add_ticket_time_entry` is a numeric location id
 - `work_type` and `work_role` in `add_ticket_time_entry` are names, not ids
