@@ -376,7 +376,7 @@ class ConnectWiseClient:
         if actual_hours is not None:
             payload["actualHours"] = actual_hours
         if location_id is not None:
-            payload["locationId"] = location_id
+            payload["location"] = {"id": location_id}
         if billable_option:
             payload["billableOption"] = billable_option
         if work_type:
