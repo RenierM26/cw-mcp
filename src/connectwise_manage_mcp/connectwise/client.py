@@ -557,8 +557,6 @@ class ConnectWiseClient:
             conditions.append(
                 f'(firstName contains "{escaped}" OR lastName contains "{escaped}" OR officeEmail contains "{escaped}")'
             )
-        if inactive is not None:
-            conditions.append(f'inactiveFlag={str(inactive).lower()}')
 
         params = {
             "page": page,
@@ -568,7 +566,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        return await self._request("GET", "/system/members", params=params)
+        members = await self._request("GET", "/system/members", params=params)
+        return self._filter_inactive_records(members, inactive)
 
     async def list_work_types(
         self,
@@ -583,8 +582,6 @@ class ConnectWiseClient:
         conditions: list[str] = []
         if name:
             conditions.append(f'name contains "{self._escape(name)}"')
-        if inactive is not None:
-            conditions.append(f'inactiveFlag={str(inactive).lower()}')
 
         params = {
             "page": page,
@@ -594,7 +591,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        return await self._request("GET", "/time/workTypes", params=params)
+        work_types = await self._request("GET", "/time/workTypes", params=params)
+        return self._filter_inactive_records(work_types, inactive)
 
     async def list_work_roles(
         self,
@@ -609,8 +607,6 @@ class ConnectWiseClient:
         conditions: list[str] = []
         if name:
             conditions.append(f'name contains "{self._escape(name)}"')
-        if inactive is not None:
-            conditions.append(f'inactiveFlag={str(inactive).lower()}')
 
         params = {
             "page": page,
@@ -620,7 +616,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        return await self._request("GET", "/time/workRoles", params=params)
+        work_roles = await self._request("GET", "/time/workRoles", params=params)
+        return self._filter_inactive_records(work_roles, inactive)
 
     async def list_locations(
         self,
@@ -635,8 +632,6 @@ class ConnectWiseClient:
         conditions: list[str] = []
         if name:
             conditions.append(f'name contains "{self._escape(name)}"')
-        if inactive is not None:
-            conditions.append(f'inactiveFlag={str(inactive).lower()}')
 
         params = {
             "page": page,
@@ -646,13 +641,35 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        return await self._request("GET", "/system/locations", params=params)
+        locations = await self._request("GET", "/system/locations", params=params)
+        return self._filter_inactive_records(locations, inactive)
 
     @staticmethod
     def _escape(value: str) -> str:
         """Escape double quotes for ConnectWise conditions expressions."""
 
         return value.replace('"', '\\"')
+
+    @staticmethod
+    def _filter_inactive_records(records: list[dict[str, Any]], inactive: bool | None) -> list[dict[str, Any]]:
+        """Apply an inactive filter locally when an endpoint does not support it in conditions.
+
+        Some ConnectWise endpoints return ``inactiveFlag`` but reject it inside the
+        server-side ``conditions`` expression with ``APIFindCondition`` errors. To keep
+        lookups reliable, fetch the narrowed dataset first and then filter locally when
+        the inactive state is present on the returned record.
+        """
+
+        if inactive is None:
+            return records
+
+        filtered: list[dict[str, Any]] = []
+        for record in records:
+            record_inactive = record.get("inactiveFlag")
+            if isinstance(record_inactive, bool) and record_inactive != inactive:
+                continue
+            filtered.append(record)
+        return filtered
 
     @staticmethod
     def _subtype_matches_type(subtype: dict[str, Any], type_id: int) -> bool:
