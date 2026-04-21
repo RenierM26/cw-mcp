@@ -435,42 +435,53 @@ class ConnectWiseClient:
     async def get_board_types(self, board_id: int) -> list[dict[str, Any]]:
         """Fetch types available for a given service board."""
 
-        return await self._request("GET", f"/service/boards/{board_id}/types")
+        return await self._request(
+            "GET",
+            f"/service/boards/{board_id}/types",
+            params={
+                "conditions": "inactiveFlag=false",
+                "fields": "id,name",
+                "orderBy": "name asc",
+            },
+        )
 
     async def get_board_subtypes(self, board_id: int, type_id: int) -> list[dict[str, Any]]:
         """Fetch subtypes for a specific board/type combination.
 
         ConnectWise exposes board subtypes at the board level rather than under a nested
-        ``/types/{type_id}/subtypes`` route. We therefore fetch the board's subtypes once
-        and locally keep only those associated with the requested type id.
+        ``/types/{type_id}/subtypes`` route. Query the board-level collection with
+        server-side active-only and type-association conditions so the response stays
+        compact and hierarchy-specific.
         """
 
-        subtypes = await self._request("GET", f"/service/boards/{board_id}/subtypes")
-        return [
-            subtype
-            for subtype in subtypes
-            if self._subtype_matches_type(subtype, type_id)
-        ]
+        return await self._request(
+            "GET",
+            f"/service/boards/{board_id}/subtypes",
+            params={
+                "conditions": f"inactiveFlag=false and typeAssociation/id={type_id}",
+                "fields": "id,name",
+                "orderBy": "name asc",
+            },
+        )
 
     async def get_board_items(self, board_id: int, type_id: int, subtype_id: int) -> list[dict[str, Any]]:
         """Fetch items for a specific board/type/subtype combination.
 
-        ConnectWise exposes board items at the board level, while subtype linkage lives
-        on per-item association records. We therefore fetch the board's items, inspect
-        each item's associations, and keep only those linked to the requested subtype id.
-        The ``type_id`` argument is retained for symmetry with the hierarchy lookup flow.
+        ConnectWise exposes board items at the board level. Query that collection with
+        server-side active-only and subtype-association conditions so the response stays
+        compact and hierarchy-specific. The ``type_id`` argument is retained for symmetry
+        with the hierarchy lookup flow.
         """
 
-        items = await self._request("GET", f"/service/boards/{board_id}/items")
-        matching_items: list[dict[str, Any]] = []
-        for item in items:
-            item_id = item.get("id")
-            if not isinstance(item_id, int):
-                continue
-            associations = await self.get_board_item_associations(board_id, item_id)
-            if any(self._item_association_matches_subtype(association, subtype_id) for association in associations):
-                matching_items.append(item)
-        return matching_items
+        return await self._request(
+            "GET",
+            f"/service/boards/{board_id}/items",
+            params={
+                "conditions": f"inactiveFlag=false and subTypeAssociation/id={subtype_id}",
+                "fields": "id,name",
+                "orderBy": "name asc",
+            },
+        )
 
     async def get_board_item_associations(self, board_id: int, item_id: int) -> list[dict[str, Any]]:
         """Fetch subtype-association records for a board item."""
