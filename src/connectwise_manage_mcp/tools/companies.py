@@ -31,7 +31,7 @@ def _company_summary(company: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@mcp.tool(description="Get a single ConnectWise company by id.")
+@mcp.tool(description="Get a single ConnectWise company by numeric id. Use this when you already know company_id and want the current company details without searching first.")
 async def get_company(company_id: int) -> dict[str, Any]:
     """Fetch one company and include a compact summary alongside the raw payload.
 

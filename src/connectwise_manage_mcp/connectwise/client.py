@@ -330,6 +330,7 @@ class ConnectWiseClient:
         time_end: str | None = None,
         hours_deduct: float | None = None,
         actual_hours: float | None = None,
+        location_id: int | None = None,
         billable_option: str | None = None,
         work_type: str | None = None,
         work_role: str | None = None,
@@ -348,6 +349,7 @@ class ConnectWiseClient:
             time_end: Optional entry end timestamp.
             hours_deduct: Optional hours-to-deduct value.
             actual_hours: Optional actual hours value.
+            location_id: Optional numeric location id to force on the time entry.
             billable_option: Optional billable option name/value.
             work_type: Optional work type name.
             work_role: Optional work role name.
@@ -373,6 +375,8 @@ class ConnectWiseClient:
             payload["hoursDeduct"] = hours_deduct
         if actual_hours is not None:
             payload["actualHours"] = actual_hours
+        if location_id is not None:
+            payload["locationId"] = location_id
         if billable_option:
             payload["billableOption"] = billable_option
         if work_type:
@@ -434,14 +438,44 @@ class ConnectWiseClient:
         return await self._request("GET", f"/service/boards/{board_id}/types")
 
     async def get_board_subtypes(self, board_id: int, type_id: int) -> list[dict[str, Any]]:
-        """Fetch subtypes for a specific board/type combination."""
+        """Fetch subtypes for a specific board/type combination.
 
-        return await self._request("GET", f"/service/boards/{board_id}/types/{type_id}/subtypes")
+        ConnectWise exposes board subtypes at the board level rather than under a nested
+        ``/types/{type_id}/subtypes`` route. We therefore fetch the board's subtypes once
+        and locally keep only those associated with the requested type id.
+        """
+
+        subtypes = await self._request("GET", f"/service/boards/{board_id}/subtypes")
+        return [
+            subtype
+            for subtype in subtypes
+            if self._subtype_matches_type(subtype, type_id)
+        ]
 
     async def get_board_items(self, board_id: int, type_id: int, subtype_id: int) -> list[dict[str, Any]]:
-        """Fetch items for a specific board/type/subtype combination."""
+        """Fetch items for a specific board/type/subtype combination.
 
-        path = f"/service/boards/{board_id}/types/{type_id}/subtypes/{subtype_id}/items"
+        ConnectWise exposes board items at the board level, while subtype linkage lives
+        on per-item association records. We therefore fetch the board's items, inspect
+        each item's associations, and keep only those linked to the requested subtype id.
+        The ``type_id`` argument is retained for symmetry with the hierarchy lookup flow.
+        """
+
+        items = await self._request("GET", f"/service/boards/{board_id}/items")
+        matching_items: list[dict[str, Any]] = []
+        for item in items:
+            item_id = item.get("id")
+            if not isinstance(item_id, int):
+                continue
+            associations = await self.get_board_item_associations(board_id, item_id)
+            if any(self._item_association_matches_subtype(association, subtype_id) for association in associations):
+                matching_items.append(item)
+        return matching_items
+
+    async def get_board_item_associations(self, board_id: int, item_id: int) -> list[dict[str, Any]]:
+        """Fetch subtype-association records for a board item."""
+
+        path = f"/service/boards/{board_id}/items/{item_id}/associations"
         return await self._request("GET", path)
 
     async def get_board_teams(self, board_id: int) -> list[dict[str, Any]]:
@@ -588,8 +622,70 @@ class ConnectWiseClient:
 
         return await self._request("GET", "/time/workRoles", params=params)
 
+    async def list_locations(
+        self,
+        *,
+        name: str | None = None,
+        inactive: bool | None = False,
+        page: int = 1,
+        page_size: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """List system locations for time-entry validation workflows."""
+
+        conditions: list[str] = []
+        if name:
+            conditions.append(f'name contains "{self._escape(name)}"')
+        if inactive is not None:
+            conditions.append(f'inactiveFlag={str(inactive).lower()}')
+
+        params = {
+            "page": page,
+            "pageSize": self._bounded_page_size(page_size),
+            "orderBy": "name asc",
+        }
+        if conditions:
+            params["conditions"] = " and ".join(conditions)
+
+        return await self._request("GET", "/system/locations", params=params)
+
     @staticmethod
     def _escape(value: str) -> str:
         """Escape double quotes for ConnectWise conditions expressions."""
 
         return value.replace('"', '\\"')
+
+    @staticmethod
+    def _subtype_matches_type(subtype: dict[str, Any], type_id: int) -> bool:
+        """Return whether a board subtype is associated with the requested board type id."""
+
+        type_association_ids = subtype.get("typeAssociationIds")
+        if isinstance(type_association_ids, list):
+            return any(candidate == type_id for candidate in type_association_ids)
+
+        type_association = subtype.get("typeAssociation") or {}
+        if type_association.get("id") == type_id:
+            return True
+
+        type_associations = subtype.get("typeAssociations")
+        if isinstance(type_associations, list):
+            return any((item or {}).get("id") == type_id for item in type_associations if isinstance(item, dict))
+
+        return False
+
+    @staticmethod
+    def _item_association_matches_subtype(association: dict[str, Any], subtype_id: int) -> bool:
+        """Return whether an item association includes the requested board subtype id."""
+
+        subtype_association_ids = association.get("subTypeAssociationIds")
+        if isinstance(subtype_association_ids, list):
+            return any(candidate == subtype_id for candidate in subtype_association_ids)
+
+        subtype_association = association.get("subTypeAssociation") or {}
+        if subtype_association.get("id") == subtype_id:
+            return True
+
+        subtype_associations = association.get("subTypeAssociations")
+        if isinstance(subtype_associations, list):
+            return any((item or {}).get("id") == subtype_id for item in subtype_associations if isinstance(item, dict))
+
+        return False

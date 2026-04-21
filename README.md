@@ -59,9 +59,12 @@ If you are choosing tools programmatically, these flows are the safest starting 
 ### Add a time entry safely
 
 1. `search_members` to find the `member_identifier`
-2. `list_work_types` to validate `work_type`
-3. `list_work_roles` to validate `work_role`
-4. `add_ticket_time_entry`
+2. optional `list_locations` when ConnectWise location restrictions apply and the default location may need to be overridden
+3. `list_work_types` to validate `work_type`
+4. `list_work_roles` to validate `work_role`
+5. `add_ticket_time_entry`
+
+Small-model hint: if a time-entry create fails with a location-related error, the recovery path should be `list_locations` and then retry `add_ticket_time_entry` with an allowed numeric `location_id`.
 
 ## Names vs ids
 
@@ -73,6 +76,7 @@ ConnectWise write calls mix numeric ids and human-readable names. This is the ea
 - `status` in `update_ticket_status` is a board-specific status name, not a status id
 - `board`, `status`, `type_name`, `sub_type_name`, `item_name`, `team`, `severity`, `impact`, and `source` in `update_ticket_classifications` are names, not ids
 - `member_identifier` in `add_ticket_time_entry` is a string identifier, not the numeric member id
+- `location_id` in `add_ticket_time_entry` is a numeric location id
 - `work_type` and `work_role` in `add_ticket_time_entry` are names, not ids
 
 ## Tool response patterns
@@ -110,6 +114,32 @@ Most tools follow one of these response shapes.
   "timeEntries": {"count": 0, "data": [], "raw": []}
 }
 ```
+
+## Which read tool to choose
+
+When several read tools look similar, use the narrowest tool that answers the question.
+
+- use `search_tickets` when you do not know the ticket id yet
+- use `get_ticket` when you know the ticket id and only need the current ticket record
+- use `get_ticket_bundle` when you know the ticket id and need ticket details plus notes and time entries together
+- use `get_ticket_notes` when you only need notes
+- use `get_ticket_time_entries` when you only need time entries
+- use `get_company` when you already know `company_id`
+- use `search_companies` when you only know a company name or identifier fragment
+- use `search_contacts` when you need a numeric `contact_id`
+
+## Common write recovery paths
+
+If a write fails validation or a required value is unknown, use the matching lookup tool and retry.
+
+- unknown `company_id` for `create_ticket` -> `search_companies`
+- unknown `contact_id` for `create_ticket` -> `search_contacts`
+- invalid status for `update_ticket_status` -> `get_ticket`, then `get_board_statuses` or `get_board_lookup`
+- invalid board, type, subtype, item, or team for `update_ticket_classifications` -> `get_ticket`, optional `list_boards`, then `get_board_lookup`
+- unknown `member_identifier` for `add_ticket_time_entry` -> `search_members`
+- unknown `work_type` for `add_ticket_time_entry` -> `list_work_types`
+- unknown `work_role` for `add_ticket_time_entry` -> `list_work_roles`
+- location-restriction error or unknown `location_id` for `add_ticket_time_entry` -> `list_locations`
 
 ## Included tools
 
@@ -592,6 +622,7 @@ Tool call arguments:
   "time_end": "2026-04-20T15:45:00Z",
   "actual_hours": 0.25,
   "hours_deduct": 0.25,
+  "location_id": 7,
   "work_type": "Remote Support",
   "work_role": "Engineer",
   "notes": "Investigated VPN reset issue."
@@ -614,6 +645,8 @@ Example result excerpt:
     "timeEnd": "2026-04-20T15:45:00Z",
     "actualHours": 0.25,
     "hoursDeduct": 0.25,
+    "locationId": 7,
+    "location": null,
     "billableOption": null,
     "workType": "Remote Support",
     "workRole": "Engineer",

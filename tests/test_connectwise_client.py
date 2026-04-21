@@ -167,6 +167,7 @@ async def test_add_time_entry_only_sends_optional_fields_when_supplied(
         member_identifier="helpdesk1",
         time_start="2026-04-20T15:30:00Z",
         actual_hours=0.25,
+        location_id=7,
         work_type="Remote Support",
         notes="Worked issue",
         email_contact_flag=True,
@@ -179,10 +180,68 @@ async def test_add_time_entry_only_sends_optional_fields_when_supplied(
         "member": {"identifier": "helpdesk1"},
         "timeStart": "2026-04-20T15:30:00Z",
         "actualHours": 0.25,
+        "locationId": 7,
         "workType": {"name": "Remote Support"},
         "notes": "Worked issue",
         "emailContactFlag": True,
     }
+
+
+async def test_get_board_subtypes_uses_board_level_endpoint_and_filters_by_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(
+            200,
+            json_data=[
+                {"id": 9, "name": "Remote Access", "typeAssociationIds": [3]},
+                {"id": 10, "name": "Server", "typeAssociationIds": [4]},
+                {"id": 11, "name": "Fallback Shape", "typeAssociation": {"id": 3}},
+            ],
+        ),
+    )
+
+    client = ConnectWiseClient()
+    subtypes = await client.get_board_subtypes(12, 3)
+
+    assert calls[0]["url"].endswith("/service/boards/12/subtypes")
+    assert [item["id"] for item in subtypes] == [9, 11]
+
+
+async def test_get_board_items_uses_board_level_endpoint_and_filters_by_subtype_associations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(method: str, url: str, **kwargs: Any) -> FakeResponse:
+        if url.endswith("/service/boards/12/items"):
+            return FakeResponse(
+                200,
+                json_data=[
+                    {"id": 14, "name": "VPN"},
+                    {"id": 15, "name": "Server"},
+                    {"id": 16, "name": "Fallback Shape"},
+                ],
+            )
+        if url.endswith("/service/boards/12/items/14/associations"):
+            return FakeResponse(200, json_data=[{"id": 1, "subTypeAssociationIds": [9]}])
+        if url.endswith("/service/boards/12/items/15/associations"):
+            return FakeResponse(200, json_data=[{"id": 2, "subTypeAssociationIds": [10]}])
+        if url.endswith("/service/boards/12/items/16/associations"):
+            return FakeResponse(200, json_data=[{"id": 3, "subTypeAssociation": {"id": 9}}])
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    calls = install_fake_async_client(monkeypatch, handler)
+
+    client = ConnectWiseClient()
+    items = await client.get_board_items(12, 3, 9)
+
+    assert calls[0]["url"].endswith("/service/boards/12/items")
+    assert [call["url"].split("/v4_6_release/apis/3.0")[-1] for call in calls[1:]] == [
+        "/service/boards/12/items/14/associations",
+        "/service/boards/12/items/15/associations",
+        "/service/boards/12/items/16/associations",
+    ]
+    assert [item["id"] for item in items] == [14, 16]
 
 
 async def test_request_fails_fast_when_settings_are_incomplete(

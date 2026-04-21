@@ -50,7 +50,7 @@ def _contact_summary(contact: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@mcp.tool(description="Search ConnectWise contacts by company, name, or email. Use this before create_ticket when you need a numeric contact_id. If filtering by company_id, pass the numeric ConnectWise company id, not the company name.")
+@mcp.tool(description="Search ConnectWise contacts by company, name, or email. Use this before create_ticket when you need a numeric contact_id. If filtering by company_id, pass the numeric ConnectWise company id, not the company name. If you only know the company name, call search_companies first.")
 async def search_contacts(
     company_id: int | None = None,
     name: str | None = None,

@@ -98,7 +98,18 @@ def _work_role_summary(work_role: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@mcp.tool(description="List or search service boards for safer ticket classification workflows.")
+def _location_summary(location: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a location record for time-entry workflows."""
+
+    return {
+        "id": location.get("id"),
+        "name": location.get("name"),
+        "inactive": location.get("inactiveFlag"),
+        "defaultFlag": location.get("defaultFlag"),
+    }
+
+
+@mcp.tool(description="List or search service boards before ticket create or classification updates. Use this when you need the exact board name for create_ticket, or the numeric board_id needed by get_board_lookup, get_board_statuses, get_board_types, or get_board_subtypes.")
 async def list_boards(
     name: str | None = None,
     inactive: bool | None = False,
@@ -117,7 +128,7 @@ async def list_boards(
     }, boards, include_raw=include_raw)
 
 
-@mcp.tool(description="Get the main lookup sets for a service board before updating ticket classifications. Expects numeric ids: board_id is required, type_id is only for subtype lookup, and subtype_id is only for item lookup. Use this before write calls that need valid board-specific status, type, subtype, item, or team values.")
+@mcp.tool(description="Get the main lookup sets for a service board before update_ticket_status or update_ticket_classifications. Expects numeric ids: board_id is required, type_id is only for subtype lookup, and subtype_id is only for item lookup. Returns the valid board-specific status, type, subtype, item, and team names that the write tools expect.")
 async def get_board_lookup(
     board_id: int,
     type_id: int | None = None,
@@ -250,7 +261,7 @@ async def get_board_items(
     }, items, include_raw=include_raw)
 
 
-@mcp.tool(description="Search ConnectWise members before ownership or time-entry workflows. Use this to find the member_identifier string required by add_ticket_time_entry. Do not confuse member_identifier with the numeric member id.")
+@mcp.tool(description="Search ConnectWise members before ownership or time-entry workflows. Use this to find the exact member_identifier string required by add_ticket_time_entry. Do not pass the numeric member id to add_ticket_time_entry.")
 async def search_members(
     identifier: str | None = None,
     name: str | None = None,
@@ -285,7 +296,7 @@ async def search_members(
     }, members, include_raw=include_raw)
 
 
-@mcp.tool(description="List or search ConnectWise work types before creating time entries. add_ticket_time_entry expects a work type name, so use this first when the valid names are uncertain.")
+@mcp.tool(description="List or search ConnectWise work types before add_ticket_time_entry. That write tool expects work_type as an exact name, not an id, so use this first when the valid names are uncertain.")
 async def list_work_types(
     name: str | None = None,
     inactive: bool | None = False,
@@ -312,7 +323,7 @@ async def list_work_types(
     }, work_types, include_raw=include_raw)
 
 
-@mcp.tool(description="List or search ConnectWise work roles before creating time entries. add_ticket_time_entry expects a work role name, so use this first when the valid names are uncertain.")
+@mcp.tool(description="List or search ConnectWise work roles before add_ticket_time_entry. That write tool expects work_role as an exact name, not an id, so use this first when the valid names are uncertain.")
 async def list_work_roles(
     name: str | None = None,
     inactive: bool | None = False,
@@ -337,3 +348,27 @@ async def list_work_roles(
         "count": len(work_roles),
         "data": [_work_role_summary(item) for item in work_roles],
     }, work_roles, include_raw=include_raw)
+
+
+@mcp.tool(description="List or search ConnectWise locations before add_ticket_time_entry when the tenant restricts locations or a non-default location is needed. add_ticket_time_entry accepts location_id as a numeric location id, not a location name. If a time-entry create fails because of location restrictions, call this tool and retry with an allowed location_id.")
+async def list_locations(
+    name: str | None = None,
+    inactive: bool | None = False,
+    page: int = 1,
+    page_size: int = 50,
+    include_raw: bool = False,
+) -> dict[str, Any]:
+    """List locations and return both summaries and raw API data."""
+
+    client = ConnectWiseClient()
+    locations = await client.list_locations(
+        name=name,
+        inactive=inactive,
+        page=page,
+        page_size=page_size,
+    )
+    return _with_optional_raw({
+        "ok": True,
+        "count": len(locations),
+        "data": [_location_summary(item) for item in locations],
+    }, locations, include_raw=include_raw)

@@ -60,6 +60,7 @@ def _time_entry_summary(entry: dict[str, Any]) -> dict[str, Any]:
     member = entry.get("member") or {}
     work_type = entry.get("workType") or {}
     work_role = entry.get("workRole") or {}
+    location = entry.get("location") or {}
     return {
         "id": entry.get("id"),
         "member": member.get("identifier") or member.get("name"),
@@ -67,6 +68,8 @@ def _time_entry_summary(entry: dict[str, Any]) -> dict[str, Any]:
         "timeEnd": entry.get("timeEnd"),
         "actualHours": entry.get("actualHours"),
         "hoursDeduct": entry.get("hoursDeduct"),
+        "locationId": entry.get("locationId") or location.get("id"),
+        "location": location.get("name"),
         "billableOption": entry.get("billableOption"),
         "workType": work_type.get("name"),
         "workRole": work_role.get("name"),
@@ -245,6 +248,7 @@ async def _validate_time_entry_inputs(
     member_identifier: str,
     time_start: str,
     time_end: str | None,
+    location_id: int | None,
     work_type: str | None,
     work_role: str | None,
 ) -> None:
@@ -262,6 +266,20 @@ async def _validate_time_entry_inputs(
         raise ConnectWiseError(
             f"Unknown member_identifier '{member_identifier}'. Call search_members first and use the exact identifier.{suggestion}"
         )
+
+    if location_id is not None:
+        locations = await client.list_locations(inactive=False, page_size=100)
+        if not any(location.get("id") == location_id for location in locations):
+            valid_ids = sorted([
+                candidate_id
+                for location in locations
+                for candidate_id in [location.get("id")]
+                if isinstance(candidate_id, int)
+            ])
+            suggestion = f" Valid location ids: {', '.join(str(item) for item in valid_ids)}" if valid_ids else ""
+            raise ConnectWiseError(
+                f"Unknown location_id '{location_id}'. Call list_locations first and use an allowed numeric location id.{suggestion}"
+            )
 
     if work_type:
         work_types = await client.list_work_types(name=work_type, inactive=False, page_size=100)
@@ -282,7 +300,7 @@ async def _validate_time_entry_inputs(
             )
 
 
-@mcp.tool(description="Get a single ConnectWise service ticket by id.")
+@mcp.tool(description="Get a single ConnectWise service ticket by numeric id. Use this before update_ticket_status or update_ticket_classifications when you need the current board, status, type, subtype, item, team, or summary first.")
 async def get_ticket(ticket_id: int) -> dict[str, Any]:
     """Fetch one ticket and include a compact summary alongside the raw payload."""
 
@@ -291,7 +309,7 @@ async def get_ticket(ticket_id: int) -> dict[str, Any]:
     return {"ok": True, "data": ticket, "summary": _ticket_summary(ticket)}
 
 
-@mcp.tool(description="Get a ticket with summary, description, notes, and time entries in one call.")
+@mcp.tool(description="Get a ticket with summary, description, notes, and time entries in one call. Use this when an agent needs the current ticket state and recent activity before deciding what write tool to call next.")
 async def get_ticket_bundle(
     ticket_id: int,
     notes_page_size: int = 50,
@@ -338,7 +356,7 @@ async def get_ticket_bundle(
     }
 
 
-@mcp.tool(description="Search ConnectWise service tickets with simple business-friendly filters.")
+@mcp.tool(description="Search ConnectWise service tickets with simple business-facing filters like board, status, company, or summary text. Use this when you do not know the numeric ticket id yet.")
 async def search_tickets(
     board: str | None = None,
     status: str | None = None,
@@ -379,7 +397,7 @@ async def search_tickets(
     }, tickets, include_raw=include_raw)
 
 
-@mcp.tool(description="Create a new ConnectWise service ticket. Expects company_id as a numeric id and board as a board name. Usually call search_companies first to find company_id, optional search_contacts to find contact_id, and list_boards if the board name is uncertain.")
+@mcp.tool(description="Create a new ConnectWise service ticket. Expects company_id as a numeric id and board as an exact board name. Usually call search_companies first to find company_id, optional search_contacts to find contact_id, and list_boards if the board name is uncertain.")
 async def create_ticket(
     company_id: int,
     board: str,
@@ -416,7 +434,7 @@ async def create_ticket(
     return {"ok": True, "data": ticket, "summary": _ticket_summary(ticket)}
 
 
-@mcp.tool(description="Update only the status of an existing ConnectWise service ticket. Expects status as a board-specific status name, not a status id. Usually call get_ticket and then get_board_statuses or get_board_lookup first if the valid status names are uncertain.")
+@mcp.tool(description="Update only the status of an existing ConnectWise service ticket. Expects status as a board-specific status name, not a status id. Recommended sequence: get_ticket to learn the board, then get_board_statuses or get_board_lookup to choose a valid status name, then call this tool.")
 async def update_ticket_status(ticket_id: int, status: str) -> dict[str, Any]:
     """Update only the ticket status and echo the requested change.
 
@@ -440,7 +458,7 @@ async def update_ticket_status(ticket_id: int, status: str) -> dict[str, Any]:
     return {"ok": True, "data": result, "ticketId": ticket_id, "newStatus": status}
 
 
-@mcp.tool(description="Add a note to a ConnectWise service ticket.")
+@mcp.tool(description="Add a note to a ConnectWise service ticket. Use internal=true for internal-only notes. Use this when you already know the ticket id and only need to append a note, not change classifications or time entries.")
 async def add_ticket_note(ticket_id: int, text: str, internal: bool = True) -> dict[str, Any]:
     """Add a note to a ticket and echo whether it was marked internal."""
 
@@ -449,7 +467,7 @@ async def add_ticket_note(ticket_id: int, text: str, internal: bool = True) -> d
     return {"ok": True, "data": result, "ticketId": ticket_id, "internal": internal}
 
 
-@mcp.tool(description="Get notes for a ConnectWise service ticket.")
+@mcp.tool(description="Get notes for a ConnectWise service ticket. Use this when you only need notes. If you also need the ticket summary or time entries, prefer get_ticket_bundle to reduce tool hops.")
 async def get_ticket_notes(
     ticket_id: int,
     page: int = 1,
@@ -467,7 +485,7 @@ async def get_ticket_notes(
     }, notes, include_raw=include_raw)
 
 
-@mcp.tool(description="Get time entries linked to a ConnectWise service ticket.")
+@mcp.tool(description="Get time entries linked to a ConnectWise service ticket. Use this when you only need time entries. If you also need the ticket summary or notes, prefer get_ticket_bundle to reduce tool hops.")
 async def get_ticket_time_entries(
     ticket_id: int,
     page: int = 1,
@@ -485,7 +503,7 @@ async def get_ticket_time_entries(
     }, entries, include_raw=include_raw)
 
 
-@mcp.tool(description="Update ticket classification fields like status, priority, board, type, subtype, item, team, severity, impact, or source. Expects board, status, type_name, sub_type_name, item_name, team, severity, impact, and source as names, not ids. Usually call list_boards and get_board_lookup first so the selected values match the board hierarchy.")
+@mcp.tool(description="Update ticket classification fields like status, priority, board, type, subtype, item, team, severity, impact, or source. Expects board, status, type_name, sub_type_name, item_name, team, severity, impact, and source as names, not ids. Recommended sequence: get_ticket, optional list_boards, then get_board_lookup so the chosen values match the board hierarchy before calling this tool.")
 async def update_ticket_classifications(
     ticket_id: int,
     status: str | None = None,
@@ -557,7 +575,7 @@ async def update_ticket_classifications(
     }
 
 
-@mcp.tool(description="Add a time entry against a ConnectWise service ticket. Expects member_identifier as the ConnectWise member identifier string, not the numeric member id. work_type and work_role are names. Usually call search_members, list_work_types, and list_work_roles first if those values are uncertain.")
+@mcp.tool(description="Add a time entry against a ConnectWise service ticket. Expects member_identifier as the exact ConnectWise member identifier string, not the numeric member id. work_type and work_role are exact names, not ids. location_id is an optional numeric location id. Recommended sequence: search_members, optional list_locations, list_work_types, list_work_roles, then add_ticket_time_entry. If time entry creation fails because of location restrictions, call list_locations and retry with an allowed location_id.")
 async def add_ticket_time_entry(
     ticket_id: int,
     member_identifier: str,
@@ -565,6 +583,7 @@ async def add_ticket_time_entry(
     time_end: str | None = None,
     hours_deduct: float | None = None,
     actual_hours: float | None = None,
+    location_id: int | None = None,
     billable_option: str | None = None,
     work_type: str | None = None,
     work_role: str | None = None,
@@ -583,6 +602,7 @@ async def add_ticket_time_entry(
         time_end: Optional entry end time as an ISO-8601 timestamp.
         hours_deduct: Optional hours-to-deduct value.
         actual_hours: Optional actual-hours value.
+        location_id: Optional numeric location id to force when ConnectWise location restrictions apply.
         billable_option: Optional billing behavior.
         work_type: Optional work type name.
         work_role: Optional work role name.
@@ -594,6 +614,7 @@ async def add_ticket_time_entry(
 
     Prerequisites:
         Use ``search_members`` first if the member identifier is not already known.
+        Use ``list_locations`` first if a restricted or non-default location may be required.
         Use ``list_work_types`` and ``list_work_roles`` first if the valid names are uncertain.
 
     Returns:
@@ -606,6 +627,7 @@ async def add_ticket_time_entry(
         member_identifier=member_identifier,
         time_start=time_start,
         time_end=time_end,
+        location_id=location_id,
         work_type=work_type,
         work_role=work_role,
     )
@@ -616,6 +638,7 @@ async def add_ticket_time_entry(
         time_end=time_end,
         hours_deduct=hours_deduct,
         actual_hours=actual_hours,
+        location_id=location_id,
         billable_option=billable_option,
         work_type=work_type,
         work_role=work_role,
