@@ -153,6 +153,36 @@ async def test_search_tickets_clamps_negative_page_size_to_one(
     assert calls[0]["params"]["pageSize"] == 1
 
 
+async def test_time_entry_lookup_endpoints_filter_inactive_locally_not_in_conditions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(
+            200,
+            json_data=[
+                {"id": 1, "identifier": "helpdesk1", "inactiveFlag": False, "name": "Helpdesk One"},
+                {"id": 2, "identifier": "olduser", "inactiveFlag": True, "name": "Old User"},
+            ],
+        ),
+    )
+
+    client = ConnectWiseClient()
+    members = await client.search_members(identifier="help", inactive=False)
+    work_types = await client.list_work_types(name="Remote", inactive=False)
+    work_roles = await client.list_work_roles(name="Engineer", inactive=False)
+    locations = await client.list_locations(name="HQ", inactive=False)
+
+    assert [member["id"] for member in members] == [1]
+    assert [item["id"] for item in work_types] == [1]
+    assert [item["id"] for item in work_roles] == [1]
+    assert [item["id"] for item in locations] == [1]
+
+    for call in calls:
+        conditions = (call.get("params") or {}).get("conditions", "")
+        assert "inactiveFlag=" not in conditions
+
+
 async def test_add_time_entry_only_sends_optional_fields_when_supplied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
