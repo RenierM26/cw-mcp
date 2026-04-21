@@ -478,7 +478,7 @@ class ConnectWiseClient:
             "GET",
             f"/service/boards/{board_id}/typeSubTypeItemAssociations",
             params={
-                "childConditions": (
+                "conditions": (
                     f"type/id={type_id} and subType/id={subtype_id} and item/inactiveFlag=false"
                 ),
                 "fields": "item/id,item/name",

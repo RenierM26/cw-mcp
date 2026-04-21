@@ -298,7 +298,7 @@ async def test_get_board_items_uses_board_level_endpoint_and_filters_by_subtype_
 
     assert calls[0]["url"].endswith("/service/boards/12/typeSubTypeItemAssociations")
     assert calls[0]["params"] == {
-        "childConditions": "type/id=3 and subType/id=9 and item/inactiveFlag=false",
+        "conditions": "type/id=3 and subType/id=9 and item/inactiveFlag=false",
         "fields": "item/id,item/name",
         "orderBy": "item/name asc",
     }
