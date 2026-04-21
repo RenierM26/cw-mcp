@@ -50,6 +50,13 @@ class ConnectWiseClient:
         suffix = path if path.startswith("/") else f"/{path}"
         return f"{base}{suffix}"
 
+    def _bounded_page_size(self, page_size: int | None) -> int:
+        """Clamp requested page sizes into a ConnectWise-safe positive range."""
+
+        if page_size is None:
+            return self.settings.cw_page_size
+        return max(1, min(page_size, self.settings.cw_max_page_size))
+
     async def _request(
         self,
         method: str,
@@ -76,14 +83,17 @@ class ConnectWiseClient:
         if not self.settings.is_configured:
             raise ConnectWiseError("ConnectWise settings are incomplete. Fill in the env vars first.")
 
-        async with httpx.AsyncClient(timeout=self.settings.cw_timeout_seconds) as client:
-            response = await client.request(
-                method,
-                self._url(path),
-                headers=self._headers(),
-                params=params,
-                json=json,
-            )
+        try:
+            async with httpx.AsyncClient(timeout=self.settings.cw_timeout_seconds) as client:
+                response = await client.request(
+                    method,
+                    self._url(path),
+                    headers=self._headers(),
+                    params=params,
+                    json=json,
+                )
+        except httpx.HTTPError as exc:
+            raise ConnectWiseError(f"ConnectWise request failed: {exc}") from exc
 
         if response.status_code >= 400:
             detail = response.text[:1000]
@@ -92,7 +102,12 @@ class ConnectWiseClient:
         if response.status_code == 204 or not response.content:
             return {"ok": True}
 
-        return response.json()
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise ConnectWiseError(
+                f"ConnectWise returned a non-JSON response for {method} {path}."
+            ) from exc
 
     async def healthcheck(self) -> dict[str, Any]:
         """Fetch basic system information to verify API reachability."""
@@ -140,7 +155,7 @@ class ConnectWiseClient:
 
         params = {
             "page": page,
-            "pageSize": min(page_size or self.settings.cw_page_size, self.settings.cw_max_page_size),
+            "pageSize": self._bounded_page_size(page_size),
             "orderBy": "lastUpdated desc",
         }
         if conditions:
@@ -283,7 +298,7 @@ class ConnectWiseClient:
 
         params = {
             "page": page,
-            "pageSize": min(page_size or self.settings.cw_page_size, self.settings.cw_max_page_size),
+            "pageSize": self._bounded_page_size(page_size),
             "orderBy": order_by,
         }
         return await self._request("GET", f"/service/tickets/{ticket_id}/notes", params=params)
@@ -301,7 +316,7 @@ class ConnectWiseClient:
         params = {
             "conditions": f'(chargeToType="ServiceTicket" OR chargeToType="ProjectTicket") AND chargeToId={ticket_id}',
             "page": page,
-            "pageSize": min(page_size or self.settings.cw_page_size, self.settings.cw_max_page_size),
+            "pageSize": self._bounded_page_size(page_size),
             "orderBy": order_by,
         }
         return await self._request("GET", "/time/entries", params=params)
@@ -400,7 +415,7 @@ class ConnectWiseClient:
 
         params = {
             "page": page,
-            "pageSize": min(page_size or self.settings.cw_page_size, self.settings.cw_max_page_size),
+            "pageSize": self._bounded_page_size(page_size),
             "orderBy": "name asc",
         }
         if conditions:
@@ -452,7 +467,7 @@ class ConnectWiseClient:
 
         params = {
             "page": page,
-            "pageSize": min(page_size or self.settings.cw_page_size, self.settings.cw_max_page_size),
+            "pageSize": self._bounded_page_size(page_size),
             "orderBy": "name asc",
         }
         if conditions:
@@ -481,7 +496,7 @@ class ConnectWiseClient:
 
         params = {
             "page": page,
-            "pageSize": min(page_size or self.settings.cw_page_size, self.settings.cw_max_page_size),
+            "pageSize": self._bounded_page_size(page_size),
             "orderBy": "lastName asc",
         }
         if conditions:
@@ -513,7 +528,7 @@ class ConnectWiseClient:
 
         params = {
             "page": page,
-            "pageSize": min(page_size or self.settings.cw_page_size, self.settings.cw_max_page_size),
+            "pageSize": self._bounded_page_size(page_size),
             "orderBy": "identifier asc",
         }
         if conditions:
@@ -539,7 +554,7 @@ class ConnectWiseClient:
 
         params = {
             "page": page,
-            "pageSize": min(page_size or self.settings.cw_page_size, self.settings.cw_max_page_size),
+            "pageSize": self._bounded_page_size(page_size),
             "orderBy": "name asc",
         }
         if conditions:
@@ -565,7 +580,7 @@ class ConnectWiseClient:
 
         params = {
             "page": page,
-            "pageSize": min(page_size or self.settings.cw_page_size, self.settings.cw_max_page_size),
+            "pageSize": self._bounded_page_size(page_size),
             "orderBy": "name asc",
         }
         if conditions:

@@ -3,10 +3,14 @@ from __future__ import annotations
 from collections.abc import Generator
 
 import pytest
+from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from connectwise_manage_mcp.config import get_settings
-from connectwise_manage_mcp.server import ConnectWiseClient, create_http_app
+from connectwise_manage_mcp.server import BearerTokenAuthMiddleware, ConnectWiseClient, create_http_app
 
 
 @pytest.fixture
@@ -60,6 +64,20 @@ def test_mcp_allows_bearer_token(auth_env: None, monkeypatch: pytest.MonkeyPatch
         response = client.get(
             "/mcp",
             headers={"Authorization": "Bearer super-secret-token", "Accept": "application/json"},
+        )
+
+    assert response.status_code == 406
+
+
+
+def test_mcp_allows_lowercase_bearer_scheme(auth_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CW_CLIENT_ID", raising=False)
+    get_settings.cache_clear()
+
+    with TestClient(create_http_app()) as client:
+        response = client.get(
+            "/mcp",
+            headers={"Authorization": "bearer super-secret-token", "Accept": "application/json"},
         )
 
     assert response.status_code == 406
@@ -142,3 +160,39 @@ def test_mcp_allows_request_from_allowed_forwarded_ip(
         )
 
     assert response.status_code == 406
+
+
+def test_bearer_middleware_uses_constructor_allowlist_not_cached_settings(
+    auth_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTH_ALLOWED_IPS", "10.0.0.0/24")
+    monkeypatch.setenv("AUTH_TRUST_X_FORWARDED_FOR", "true")
+    get_settings.cache_clear()
+
+    async def ok(_request):
+        return JSONResponse({"ok": True})
+
+    app = Starlette(
+        routes=[Route("/mcp", ok)],
+        middleware=[
+            Middleware(
+                BearerTokenAuthMiddleware,
+                token="super-secret-token",
+                protected_prefixes=("/mcp",),
+                allowed_ips=("192.168.1.20",),
+                trust_x_forwarded_for=True,
+            )
+        ],
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/mcp",
+            headers={
+                "Authorization": "Bearer super-secret-token",
+                "X-Forwarded-For": "192.168.1.20",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}

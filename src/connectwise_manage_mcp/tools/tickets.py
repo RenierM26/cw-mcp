@@ -205,7 +205,11 @@ async def _validate_ticket_classifications(
 
     subtype_record = None
     if effective_sub_type_name:
-        assert type_record is not None
+        if type_record is None:
+            raise ConnectWiseError(
+                "Could not resolve the ticket type needed to validate sub_type_name. "
+                "Call get_ticket or get_board_lookup first and choose a valid type."
+            )
         subtypes = await client.get_board_subtypes(board_id, type_record["id"])
         subtype_record = _find_by_name(subtypes, effective_sub_type_name)
         if subtype_record is None:
@@ -221,7 +225,11 @@ async def _validate_ticket_classifications(
         )
 
     if item_name:
-        assert type_record is not None and subtype_record is not None
+        if type_record is None or subtype_record is None:
+            raise ConnectWiseError(
+                "Could not resolve the ticket type/subtype needed to validate item_name. "
+                "Call get_ticket or get_board_lookup first and choose a valid hierarchy."
+            )
         items = await client.get_board_items(board_id, type_record["id"], subtype_record["id"])
         if _find_by_name(items, item_name) is None:
             valid_names = _sorted_present_strings(items)
