@@ -139,6 +139,20 @@ async def test_search_tickets_builds_expected_conditions_and_caps_page_size(
     )
 
 
+async def test_search_tickets_clamps_negative_page_size_to_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data=[]),
+    )
+
+    client = ConnectWiseClient()
+    await client.search_tickets(summary="VPN", page_size=-5)
+
+    assert calls[0]["params"]["pageSize"] == 1
+
+
 async def test_add_time_entry_only_sends_optional_fields_when_supplied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -180,4 +194,47 @@ async def test_request_fails_fast_when_settings_are_incomplete(
     client = ConnectWiseClient()
 
     with pytest.raises(ConnectWiseError, match="ConnectWise settings are incomplete"):
+        await client.healthcheck()
+
+
+async def test_request_wraps_httpx_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    def factory(*, timeout: float) -> FakeAsyncClient:
+        class FailingAsyncClient(FakeAsyncClient):
+            async def request(self, method: str, url: str, **kwargs: Any) -> FakeResponse:
+                raise client_module.httpx.ConnectTimeout("timed out")
+
+        return FailingAsyncClient(timeout=timeout, handler=lambda *args, **kwargs: FakeResponse(200), calls=[])
+
+    monkeypatch.setattr(client_module.httpx, "AsyncClient", factory)
+
+    client = ConnectWiseClient()
+
+    with pytest.raises(ConnectWiseError, match="ConnectWise request failed: timed out"):
+        await client.healthcheck()
+
+
+async def test_request_wraps_non_json_success_responses(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data=None, content=b"<html>oops</html>"),
+    )
+
+    def bad_json() -> Any:
+        raise ValueError("not json")
+
+    response = FakeResponse(200, json_data=None, content=b"<html>oops</html>")
+    response.json = bad_json  # type: ignore[method-assign]
+
+    monkeypatch.setattr(
+        client_module.httpx,
+        "AsyncClient",
+        lambda *, timeout: FakeAsyncClient(timeout=timeout, handler=lambda method, url, **kwargs: response, calls=calls),
+    )
+
+    client = ConnectWiseClient()
+
+    with pytest.raises(
+        ConnectWiseError,
+        match=r"ConnectWise returned a non-JSON response for GET /system/info\.",
+    ):
         await client.healthcheck()

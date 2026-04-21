@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_network
 from typing import Any
 
 import uvicorn
@@ -38,7 +38,9 @@ class BearerTokenAuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.token = token
         self.protected_prefixes = protected_prefixes
-        self.allowed_networks = tuple(ip_network for ip_network in get_settings().parsed_auth_allowed_ips) if allowed_ips else ()
+        self.allowed_networks = (
+            tuple(ip_network(value, strict=False) for value in allowed_ips) if allowed_ips else ()
+        )
         self.trust_x_forwarded_for = trust_x_forwarded_for
 
     def _client_ip(self, request: Request) -> str | None:
@@ -70,9 +72,9 @@ class BearerTokenAuthMiddleware(BaseHTTPMiddleware):
             if not any(parsed_ip in network for network in self.allowed_networks):
                 return JSONResponse({"ok": False, "message": "Forbidden"}, status_code=403)
 
-        expected = f"Bearer {self.token}"
-        provided = request.headers.get("authorization", "")
-        if provided != expected:
+        provided = request.headers.get("authorization", "").strip()
+        scheme, _, token = provided.partition(" ")
+        if scheme.casefold() != "bearer" or token.strip() != self.token:
             return JSONResponse(
                 {"ok": False, "message": "Unauthorized"},
                 status_code=401,
