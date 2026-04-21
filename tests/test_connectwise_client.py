@@ -153,6 +153,39 @@ async def test_search_tickets_clamps_negative_page_size_to_one(
     assert calls[0]["params"]["pageSize"] == 1
 
 
+async def test_search_contacts_uses_first_last_nickname_and_filters_email_locally(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(
+            200,
+            json_data=[
+                {
+                    "id": 1,
+                    "firstName": "Jane",
+                    "lastName": "Smith",
+                    "communicationItems": [{"value": "jane.smith@example.com"}],
+                },
+                {
+                    "id": 2,
+                    "firstName": "Janet",
+                    "lastName": "Other",
+                    "communicationItems": [{"value": "janet@elsewhere.com"}],
+                },
+            ],
+        ),
+    )
+
+    client = ConnectWiseClient()
+    contacts = await client.search_contacts(name="Jane", email="smith@example.com")
+
+    assert [contact["id"] for contact in contacts] == [1]
+    assert calls[0]["params"]["conditions"] == (
+        '(firstName contains "Jane" OR lastName contains "Jane" OR nickName contains "Jane")'
+    )
+
+
 async def test_time_entry_lookup_endpoints_filter_inactive_locally_not_in_conditions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

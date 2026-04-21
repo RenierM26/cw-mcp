@@ -535,9 +535,10 @@ class ConnectWiseClient:
         if company_id is not None:
             conditions.append(f'company/id={company_id}')
         if name:
-            conditions.append(f'name contains "{self._escape(name)}"')
-        if email:
-            conditions.append(f'defaultEmailAddress contains "{self._escape(email)}"')
+            escaped = self._escape(name)
+            conditions.append(
+                f'(firstName contains "{escaped}" OR lastName contains "{escaped}" OR nickName contains "{escaped}")'
+            )
 
         params = {
             "page": page,
@@ -547,7 +548,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        return await self._request("GET", "/company/contacts", params=params)
+        contacts = await self._request("GET", "/company/contacts", params=params)
+        return self._filter_contacts_by_email(contacts, email)
 
     async def search_members(
         self,
@@ -680,6 +682,30 @@ class ConnectWiseClient:
             if isinstance(record_inactive, bool) and record_inactive != inactive:
                 continue
             filtered.append(record)
+        return filtered
+
+    @staticmethod
+    def _filter_contacts_by_email(contacts: list[dict[str, Any]], email: str | None) -> list[dict[str, Any]]:
+        """Filter contacts locally by email to avoid endpoint-specific condition issues."""
+
+        if not email:
+            return contacts
+
+        target = email.strip().casefold()
+        filtered: list[dict[str, Any]] = []
+        for contact in contacts:
+            communication_items = contact.get("communicationItems") or []
+            communication_values = [
+                (item.get("value") or "").casefold()
+                for item in communication_items
+                if isinstance(item, dict)
+            ]
+            candidates = communication_values + [
+                str(contact.get("defaultEmailAddress") or "").casefold(),
+                str(contact.get("emailAddress") or "").casefold(),
+            ]
+            if any(target in candidate for candidate in candidates if candidate):
+                filtered.append(contact)
         return filtered
 
     @staticmethod
