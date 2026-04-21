@@ -60,6 +60,9 @@ class FakeClient:
     async def list_work_roles(self, **kwargs: Any) -> list[dict[str, Any]]:
         return [{"id": 1, "name": "Engineer"}]
 
+    async def list_locations(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return [{"id": 7, "name": "HQ"}]
+
     async def add_time_entry(self, **kwargs: Any) -> dict[str, Any]:
         self.added_time_entry = kwargs
         return {
@@ -69,6 +72,7 @@ class FakeClient:
             "timeEnd": kwargs.get("time_end"),
             "actualHours": kwargs.get("actual_hours"),
             "hoursDeduct": kwargs.get("hours_deduct"),
+            "locationId": kwargs.get("location_id"),
             "billableOption": kwargs.get("billable_option"),
             "workType": {"name": kwargs.get("work_type")},
             "workRole": {"name": kwargs.get("work_role")},
@@ -135,6 +139,20 @@ async def test_add_ticket_time_entry_validates_timestamp_format(fake_client: Fak
             ticket_id=12345,
             member_identifier="helpdesk1",
             time_start="20-04-2026 15:30",
+            work_type="Remote Support",
+            work_role="Engineer",
+        )
+
+    assert fake_client.added_time_entry is None
+
+
+async def test_add_ticket_time_entry_rejects_invalid_location_id(fake_client: FakeClient) -> None:
+    with pytest.raises(ConnectWiseError, match="Unknown location_id '99'"):
+        await tickets_module.add_ticket_time_entry(
+            ticket_id=12345,
+            member_identifier="helpdesk1",
+            time_start="2026-04-20T15:30:00Z",
+            location_id=99,
             work_type="Remote Support",
             work_role="Engineer",
         )
