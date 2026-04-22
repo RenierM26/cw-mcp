@@ -607,9 +607,11 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        payload = await self._request("GET", "/system/members", params=params)
-        members = self._expect_list_response(payload, method="GET", path="/system/members")
-        return self._filter_inactive_records(members, inactive)
+        return await self._request_filtered_inactive_page(
+            "/system/members",
+            params=params,
+            inactive=inactive,
+        )
 
     async def list_work_types(
         self,
@@ -633,9 +635,11 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        payload = await self._request("GET", "/time/workTypes", params=params)
-        work_types = self._expect_list_response(payload, method="GET", path="/time/workTypes")
-        return self._filter_inactive_records(work_types, inactive)
+        return await self._request_filtered_inactive_page(
+            "/time/workTypes",
+            params=params,
+            inactive=inactive,
+        )
 
     async def list_work_roles(
         self,
@@ -659,9 +663,11 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        payload = await self._request("GET", "/time/workRoles", params=params)
-        work_roles = self._expect_list_response(payload, method="GET", path="/time/workRoles")
-        return self._filter_inactive_records(work_roles, inactive)
+        return await self._request_filtered_inactive_page(
+            "/time/workRoles",
+            params=params,
+            inactive=inactive,
+        )
 
     async def list_locations(
         self,
@@ -685,9 +691,11 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        payload = await self._request("GET", "/system/locations", params=params)
-        locations = self._expect_list_response(payload, method="GET", path="/system/locations")
-        return self._filter_inactive_records(locations, inactive)
+        return await self._request_filtered_inactive_page(
+            "/system/locations",
+            params=params,
+            inactive=inactive,
+        )
 
     @staticmethod
     def _escape(value: str) -> str:
@@ -715,6 +723,54 @@ class ConnectWiseClient:
                 continue
             filtered.append(record)
         return filtered
+
+    async def _request_filtered_inactive_page(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any],
+        inactive: bool | None,
+    ) -> list[dict[str, Any]]:
+        """Fetch enough raw pages to build a stable filtered page.
+
+        Some ConnectWise endpoints reject ``inactiveFlag`` in ``conditions``, so the
+        client filters inactive records locally. When the upstream API sorts inactive
+        rows first, filtering after a single paged request can yield sparse or empty
+        pages even though matching active rows exist later. To keep pagination useful,
+        fetch successive raw pages until the requested filtered page is filled or the
+        upstream endpoint is exhausted.
+        """
+
+        page = max(1, int(params.get("page", 1)))
+        requested_size = self._bounded_page_size(params.get("pageSize"))
+
+        base_params = dict(params)
+        base_params["pageSize"] = max(requested_size, self.settings.cw_page_size)
+
+        if inactive is None:
+            payload = await self._request("GET", path, params=base_params)
+            return self._expect_list_response(payload, method="GET", path=path)
+
+        target_start = (page - 1) * requested_size
+        target_end = target_start + requested_size
+        collected: list[dict[str, Any]] = []
+        upstream_page = 1
+
+        while len(collected) < target_end:
+            page_params = dict(base_params)
+            page_params["page"] = upstream_page
+            payload = await self._request("GET", path, params=page_params)
+            records = self._expect_list_response(payload, method="GET", path=path)
+            if not records:
+                break
+
+            collected.extend(self._filter_inactive_records(records, inactive))
+
+            if len(records) < page_params["pageSize"]:
+                break
+            upstream_page += 1
+
+        return collected[target_start:target_end]
 
     @staticmethod
     def _filter_contacts_by_email(contacts: list[dict[str, Any]], email: str | None) -> list[dict[str, Any]]:

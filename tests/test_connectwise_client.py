@@ -163,8 +163,8 @@ async def test_search_members_builds_expected_conditions(monkeypatch: pytest.Mon
     await client.search_members(identifier='member"-001', name="example", inactive=False, page=2, page_size=5)
 
     params = calls[0]["params"]
-    assert params["page"] == 2
-    assert params["pageSize"] == 5
+    assert params["page"] == 1
+    assert params["pageSize"] == 50
     assert params["orderBy"] == "identifier asc"
     assert params["conditions"] == (
         'identifier contains "member\\"-001" and '
@@ -253,6 +253,39 @@ async def test_time_entry_lookup_endpoints_filter_inactive_locally_not_in_condit
     for call in calls:
         conditions = (call.get("params") or {}).get("conditions", "")
         assert "inactiveFlag=" not in conditions
+
+
+async def test_list_work_roles_refills_sparse_filtered_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CW_PAGE_SIZE", "2")
+    get_settings.cache_clear()
+
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(
+            200,
+            json_data=(
+                [
+                    {"id": 1, "name": "Desktop Support (Ad hoc)", "inactiveFlag": True},
+                    {"id": 2, "name": "Office (Zero Rated)", "inactiveFlag": False},
+                ]
+                if kwargs["params"]["page"] == 1
+                else [
+                    {"id": 3, "name": "Pre-Sales (Zero Rated)", "inactiveFlag": False},
+                ]
+            ),
+        ),
+    )
+
+    client = ConnectWiseClient()
+    page_one = await client.list_work_roles(name="Role", inactive=False, page=1, page_size=1)
+    page_two = await client.list_work_roles(name="Role", inactive=False, page=2, page_size=1)
+
+    assert [item["id"] for item in page_one] == [2]
+    assert [item["id"] for item in page_two] == [3]
+    assert [call["params"]["page"] for call in calls] == [1, 1, 2]
+    assert all(call["params"]["pageSize"] == 2 for call in calls)
 
 
 async def test_add_time_entry_only_sends_optional_fields_when_supplied(
