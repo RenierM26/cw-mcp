@@ -134,7 +134,7 @@ async def list_boards(
     }, boards, include_raw=include_raw)
 
 
-@mcp.tool(description="Get the main lookup sets for a service board before update_ticket_status or update_ticket_classifications. Expects numeric ids: board_id is required, type_id is only for subtype lookup, and subtype_id is only for item lookup. Returns the valid board-specific status, type, subtype, item, and team names that the write tools expect.")
+@mcp.tool(description="Get the main lookup sets for a service board before update_ticket_status or update_ticket_classifications. Expects numeric ids: board_id is required, type_id is only for subtype lookup, and subtype_id is only for item lookup. Important hierarchy rule: item choices depend on subtype, and subtype choices depend on type. Returns the valid board-specific status, type, subtype, item, and team names that the write tools expect.")
 async def get_board_lookup(
     board_id: int,
     type_id: int | None = None,
@@ -231,7 +231,7 @@ async def get_board_types(board_id: int, include_raw: bool = False) -> dict[str,
     }, board_types, include_raw=include_raw)
 
 
-@mcp.tool(description="Get service board subtypes for a numeric board_id and type_id pair. Use this when a smaller hierarchy-specific lookup is easier than get_board_lookup.")
+@mcp.tool(description="Get service board subtypes for a numeric board_id and type_id pair. Use this when a smaller hierarchy-specific lookup is easier than get_board_lookup. Subtypes are type-specific, so choose type_id first and then use the returned subtype names in update_ticket_classifications.")
 async def get_board_subtypes(board_id: int, type_id: int, include_raw: bool = False) -> dict[str, Any]:
     """Fetch board subtypes for a specific board type."""
 
@@ -246,7 +246,7 @@ async def get_board_subtypes(board_id: int, type_id: int, include_raw: bool = Fa
     }, subtypes, include_raw=include_raw)
 
 
-@mcp.tool(description="Get service board items for a numeric board_id, type_id, and subtype_id combination. Returns item ids plus names that can then be used to choose the item name for ticket updates.")
+@mcp.tool(description="Get service board items for a numeric board_id, type_id, and subtype_id combination. Important hierarchy rule: items are valid only within the chosen type and subtype pair, so do not pick item_name before type_name and sub_type_name are settled. Returns item ids plus names that can then be used to choose the item name for ticket updates.")
 async def get_board_items(
     board_id: int,
     type_id: int,

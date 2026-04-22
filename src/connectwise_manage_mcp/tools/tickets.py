@@ -503,7 +503,7 @@ async def get_ticket_time_entries(
     }, entries, include_raw=include_raw)
 
 
-@mcp.tool(description="Update ticket classification fields like status, priority, board, type, subtype, item, team, severity, impact, or source. Expects board, status, type_name, sub_type_name, item_name, team, severity, impact, and source as names, not ids. Recommended sequence: get_ticket, optional list_boards, then get_board_lookup so the chosen values match the board hierarchy before calling this tool.")
+@mcp.tool(description="Update ticket classification fields like status, priority, board, type, subtype, item, team, severity, impact, or source. Expects board, status, type_name, sub_type_name, item_name, team, severity, impact, and source as names, not ids. Important hierarchy rule: item_name depends on sub_type_name, and sub_type_name depends on type_name. Recommended sequence: get_ticket, optional list_boards, then get_board_lookup so the chosen values match the board hierarchy before calling this tool.")
 async def update_ticket_classifications(
     ticket_id: int,
     status: str | None = None,
@@ -525,7 +525,9 @@ async def update_ticket_classifications(
         Use ``get_ticket`` to inspect the current classification state.
         Use ``list_boards`` to find the board id when only the board name is known.
         Use ``get_board_lookup`` to discover valid board-specific status, type, subtype,
-        item, and team names before patching. This tool expects names, not ids.
+        item, and team names before patching. This tool expects names, not ids. When
+        changing hierarchy fields, choose ``type_name`` first, then ``sub_type_name``,
+        then ``item_name``. Do not treat ``item_name`` as an independent board-wide value.
 
     Returns:
         A tool response containing the requested field values and raw patch result.

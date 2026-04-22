@@ -153,64 +153,67 @@ async def test_search_tickets_clamps_negative_page_size_to_one(
     assert calls[0]["params"]["pageSize"] == 1
 
 
-async def test_search_members_builds_expected_conditions(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_search_contacts_uses_first_last_nickname_and_filters_email_locally(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls = install_fake_async_client(
         monkeypatch,
-        lambda method, url, **kwargs: FakeResponse(200, json_data=[]),
-    )
-
-    client = ConnectWiseClient()
-    await client.search_members(identifier='TK"ekana', name="Tshepiso", inactive=False, page=2, page_size=5)
-
-    params = calls[0]["params"]
-    assert params["page"] == 2
-    assert params["pageSize"] == 5
-    assert params["orderBy"] == "identifier asc"
-    assert params["conditions"] == (
-        'identifier contains "TK\\"ekana" and '
-        '(firstName contains "Tshepiso" or lastName contains "Tshepiso" or officeEmail contains "Tshepiso") and '
-        'inactiveFlag=false'
-    )
-
-
-async def test_search_members_raises_clean_error_for_non_list_payload(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    install_fake_async_client(
-        monkeypatch,
         lambda method, url, **kwargs: FakeResponse(
             200,
-            json_data={"code": "BadRequest", "message": "Invalid conditions expression"},
+            json_data=[
+                {
+                    "id": 1,
+                    "firstName": "Jane",
+                    "lastName": "Smith",
+                    "communicationItems": [{"value": "jane.smith@example.com"}],
+                },
+                {
+                    "id": 2,
+                    "firstName": "Janet",
+                    "lastName": "Other",
+                    "communicationItems": [{"value": "janet@elsewhere.com"}],
+                },
+            ],
         ),
     )
 
     client = ConnectWiseClient()
+    contacts = await client.search_contacts(name="Jane", email="smith@example.com")
 
-    with pytest.raises(
-        ConnectWiseError,
-        match=r"unexpected non-list response for GET /system/members: .*Invalid conditions expression",
-    ):
-        await client.search_members(name="Tshepiso")
+    assert [contact["id"] for contact in contacts] == [1]
+    assert calls[0]["params"]["conditions"] == (
+        '(firstName contains "Jane" OR lastName contains "Jane" OR nickName contains "Jane")'
+    )
 
 
-async def test_list_work_roles_raises_clean_error_for_non_list_payload(
+async def test_time_entry_lookup_endpoints_filter_inactive_locally_not_in_conditions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    install_fake_async_client(
+    calls = install_fake_async_client(
         monkeypatch,
         lambda method, url, **kwargs: FakeResponse(
             200,
-            json_data={"code": "BadRequest", "message": "Unexpected response shape"},
+            json_data=[
+                {"id": 1, "identifier": "helpdesk1", "inactiveFlag": False, "name": "Helpdesk One"},
+                {"id": 2, "identifier": "olduser", "inactiveFlag": True, "name": "Old User"},
+            ],
         ),
     )
 
     client = ConnectWiseClient()
+    members = await client.search_members(identifier="help", inactive=False)
+    work_types = await client.list_work_types(name="Remote", inactive=False)
+    work_roles = await client.list_work_roles(name="Engineer", inactive=False)
+    locations = await client.list_locations(name="HQ", inactive=False)
 
-    with pytest.raises(
-        ConnectWiseError,
-        match=r"unexpected non-list response for GET /time/workRoles: .*Unexpected response shape",
-    ):
-        await client.list_work_roles(page_size=5)
+    assert [member["id"] for member in members] == [1]
+    assert [item["id"] for item in work_types] == [1]
+    assert [item["id"] for item in work_roles] == [1]
+    assert [item["id"] for item in locations] == [1]
+
+    for call in calls:
+        conditions = (call.get("params") or {}).get("conditions", "")
+        assert "inactiveFlag=" not in conditions
 
 
 async def test_add_time_entry_only_sends_optional_fields_when_supplied(
@@ -240,7 +243,7 @@ async def test_add_time_entry_only_sends_optional_fields_when_supplied(
         "member": {"identifier": "helpdesk1"},
         "timeStart": "2026-04-20T15:30:00Z",
         "actualHours": 0.25,
-        "locationId": 7,
+        "location": {"id": 7},
         "workType": {"name": "Remote Support"},
         "notes": "Worked issue",
         "emailContactFlag": True,
@@ -266,41 +269,39 @@ async def test_get_board_subtypes_uses_board_level_endpoint_and_filters_by_type(
     subtypes = await client.get_board_subtypes(12, 3)
 
     assert calls[0]["url"].endswith("/service/boards/12/subtypes")
-    assert [item["id"] for item in subtypes] == [9, 11]
+    assert calls[0]["params"] == {
+        "conditions": "inactiveFlag=false",
+        "childConditions": "typeAssociation/id=3",
+        "fields": "id,name",
+        "orderBy": "name asc",
+    }
+    assert [item["id"] for item in subtypes] == [9, 10, 11]
 
 
 async def test_get_board_items_uses_board_level_endpoint_and_filters_by_subtype_associations(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def handler(method: str, url: str, **kwargs: Any) -> FakeResponse:
-        if url.endswith("/service/boards/12/items"):
-            return FakeResponse(
-                200,
-                json_data=[
-                    {"id": 14, "name": "VPN"},
-                    {"id": 15, "name": "Server"},
-                    {"id": 16, "name": "Fallback Shape"},
-                ],
-            )
-        if url.endswith("/service/boards/12/items/14/associations"):
-            return FakeResponse(200, json_data=[{"id": 1, "subTypeAssociationIds": [9]}])
-        if url.endswith("/service/boards/12/items/15/associations"):
-            return FakeResponse(200, json_data=[{"id": 2, "subTypeAssociationIds": [10]}])
-        if url.endswith("/service/boards/12/items/16/associations"):
-            return FakeResponse(200, json_data=[{"id": 3, "subTypeAssociation": {"id": 9}}])
-        raise AssertionError(f"Unexpected URL: {url}")
-
-    calls = install_fake_async_client(monkeypatch, handler)
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(
+            200,
+            json_data=[
+                {"item": {"id": 14, "name": "VPN"}},
+                {"item": {"id": 16, "name": "Fallback Shape"}},
+                {"item": {"id": 14, "name": "VPN"}},
+            ],
+        ),
+    )
 
     client = ConnectWiseClient()
     items = await client.get_board_items(12, 3, 9)
 
-    assert calls[0]["url"].endswith("/service/boards/12/items")
-    assert [call["url"].split("/v4_6_release/apis/3.0")[-1] for call in calls[1:]] == [
-        "/service/boards/12/items/14/associations",
-        "/service/boards/12/items/15/associations",
-        "/service/boards/12/items/16/associations",
-    ]
+    assert calls[0]["url"].endswith("/service/boards/12/typeSubTypeItemAssociations")
+    assert calls[0]["params"] == {
+        "conditions": "type/id=3 and subType/id=9 and item/inactiveFlag=false",
+        "fields": "item/id,item/name",
+        "orderBy": "item/name asc",
+    }
     assert [item["id"] for item in items] == [14, 16]
 
 

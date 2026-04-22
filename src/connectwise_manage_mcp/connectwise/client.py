@@ -392,7 +392,7 @@ class ConnectWiseClient:
         if actual_hours is not None:
             payload["actualHours"] = actual_hours
         if location_id is not None:
-            payload["locationId"] = location_id
+            payload["location"] = {"id": location_id}
         if billable_option:
             payload["billableOption"] = billable_option
         if work_type:
@@ -451,42 +451,65 @@ class ConnectWiseClient:
     async def get_board_types(self, board_id: int) -> list[dict[str, Any]]:
         """Fetch types available for a given service board."""
 
-        return await self._request("GET", f"/service/boards/{board_id}/types")
+        return await self._request(
+            "GET",
+            f"/service/boards/{board_id}/types",
+            params={
+                "conditions": "inactiveFlag=false",
+                "fields": "id,name",
+                "orderBy": "name asc",
+            },
+        )
 
     async def get_board_subtypes(self, board_id: int, type_id: int) -> list[dict[str, Any]]:
         """Fetch subtypes for a specific board/type combination.
 
         ConnectWise exposes board subtypes at the board level rather than under a nested
-        ``/types/{type_id}/subtypes`` route. We therefore fetch the board's subtypes once
-        and locally keep only those associated with the requested type id.
+        ``/types/{type_id}/subtypes`` route. Query the board-level collection with an
+        active-only parent condition plus childConditions for the type association so the
+        response stays compact and hierarchy-specific.
         """
 
-        subtypes = await self._request("GET", f"/service/boards/{board_id}/subtypes")
-        return [
-            subtype
-            for subtype in subtypes
-            if self._subtype_matches_type(subtype, type_id)
-        ]
+        return await self._request(
+            "GET",
+            f"/service/boards/{board_id}/subtypes",
+            params={
+                "conditions": "inactiveFlag=false",
+                "childConditions": f"typeAssociation/id={type_id}",
+                "fields": "id,name",
+                "orderBy": "name asc",
+            },
+        )
 
     async def get_board_items(self, board_id: int, type_id: int, subtype_id: int) -> list[dict[str, Any]]:
         """Fetch items for a specific board/type/subtype combination.
 
-        ConnectWise exposes board items at the board level, while subtype linkage lives
-        on per-item association records. We therefore fetch the board's items, inspect
-        each item's associations, and keep only those linked to the requested subtype id.
-        The ``type_id`` argument is retained for symmetry with the hierarchy lookup flow.
+        ConnectWise item hierarchy lookups are exposed through the dedicated board
+        type/subtype/item association endpoint rather than the plain board-items list.
+        Query the association collection server-side, then return a compact deduplicated
+        item list with only ``id`` and ``name``.
         """
 
-        items = await self._request("GET", f"/service/boards/{board_id}/items")
-        matching_items: list[dict[str, Any]] = []
-        for item in items:
+        associations = await self._request(
+            "GET",
+            f"/service/boards/{board_id}/typeSubTypeItemAssociations",
+            params={
+                "conditions": (
+                    f"type/id={type_id} and subType/id={subtype_id} and item/inactiveFlag=false"
+                ),
+                "fields": "item/id,item/name",
+                "orderBy": "item/name asc",
+            },
+        )
+
+        items_by_id: dict[int, dict[str, Any]] = {}
+        for association in associations:
+            item = association.get("item") or {}
             item_id = item.get("id")
-            if not isinstance(item_id, int):
-                continue
-            associations = await self.get_board_item_associations(board_id, item_id)
-            if any(self._item_association_matches_subtype(association, subtype_id) for association in associations):
-                matching_items.append(item)
-        return matching_items
+            item_name = item.get("name")
+            if isinstance(item_id, int) and item_id not in items_by_id:
+                items_by_id[item_id] = {"id": item_id, "name": item_name}
+        return list(items_by_id.values())
 
     async def get_board_item_associations(self, board_id: int, item_id: int) -> list[dict[str, Any]]:
         """Fetch subtype-association records for a board item."""
@@ -540,9 +563,10 @@ class ConnectWiseClient:
         if company_id is not None:
             conditions.append(f'company/id={company_id}')
         if name:
-            conditions.append(f'name contains "{self._escape(name)}"')
-        if email:
-            conditions.append(f'defaultEmailAddress contains "{self._escape(email)}"')
+            escaped = self._escape(name)
+            conditions.append(
+                f'(firstName contains "{escaped}" OR lastName contains "{escaped}" OR nickName contains "{escaped}")'
+            )
 
         params = {
             "page": page,
@@ -552,7 +576,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        return await self._request("GET", "/company/contacts", params=params)
+        contacts = await self._request("GET", "/company/contacts", params=params)
+        return self._filter_contacts_by_email(contacts, email)
 
     async def search_members(
         self,
@@ -573,8 +598,6 @@ class ConnectWiseClient:
             conditions.append(
                 f'(firstName contains "{escaped}" or lastName contains "{escaped}" or officeEmail contains "{escaped}")'
             )
-        if inactive is not None:
-            conditions.append(f'inactiveFlag={str(inactive).lower()}')
 
         params = {
             "page": page,
@@ -584,8 +607,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        payload = await self._request("GET", "/system/members", params=params)
-        return self._expect_list_response(payload, method="GET", path="/system/members")
+        members = await self._request("GET", "/system/members", params=params)
+        return self._filter_inactive_records(members, inactive)
 
     async def list_work_types(
         self,
@@ -600,8 +623,6 @@ class ConnectWiseClient:
         conditions: list[str] = []
         if name:
             conditions.append(f'name contains "{self._escape(name)}"')
-        if inactive is not None:
-            conditions.append(f'inactiveFlag={str(inactive).lower()}')
 
         params = {
             "page": page,
@@ -611,8 +632,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        payload = await self._request("GET", "/time/workTypes", params=params)
-        return self._expect_list_response(payload, method="GET", path="/time/workTypes")
+        work_types = await self._request("GET", "/time/workTypes", params=params)
+        return self._filter_inactive_records(work_types, inactive)
 
     async def list_work_roles(
         self,
@@ -627,8 +648,6 @@ class ConnectWiseClient:
         conditions: list[str] = []
         if name:
             conditions.append(f'name contains "{self._escape(name)}"')
-        if inactive is not None:
-            conditions.append(f'inactiveFlag={str(inactive).lower()}')
 
         params = {
             "page": page,
@@ -638,8 +657,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        payload = await self._request("GET", "/time/workRoles", params=params)
-        return self._expect_list_response(payload, method="GET", path="/time/workRoles")
+        work_roles = await self._request("GET", "/time/workRoles", params=params)
+        return self._filter_inactive_records(work_roles, inactive)
 
     async def list_locations(
         self,
@@ -654,8 +673,6 @@ class ConnectWiseClient:
         conditions: list[str] = []
         if name:
             conditions.append(f'name contains "{self._escape(name)}"')
-        if inactive is not None:
-            conditions.append(f'inactiveFlag={str(inactive).lower()}')
 
         params = {
             "page": page,
@@ -665,14 +682,59 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        payload = await self._request("GET", "/system/locations", params=params)
-        return self._expect_list_response(payload, method="GET", path="/system/locations")
+        locations = await self._request("GET", "/system/locations", params=params)
+        return self._filter_inactive_records(locations, inactive)
 
     @staticmethod
     def _escape(value: str) -> str:
         """Escape double quotes for ConnectWise conditions expressions."""
 
         return value.replace('"', '\\"')
+
+    @staticmethod
+    def _filter_inactive_records(records: list[dict[str, Any]], inactive: bool | None) -> list[dict[str, Any]]:
+        """Apply an inactive filter locally when an endpoint does not support it in conditions.
+
+        Some ConnectWise endpoints return ``inactiveFlag`` but reject it inside the
+        server-side ``conditions`` expression with ``APIFindCondition`` errors. To keep
+        lookups reliable, fetch the narrowed dataset first and then filter locally when
+        the inactive state is present on the returned record.
+        """
+
+        if inactive is None:
+            return records
+
+        filtered: list[dict[str, Any]] = []
+        for record in records:
+            record_inactive = record.get("inactiveFlag")
+            if isinstance(record_inactive, bool) and record_inactive != inactive:
+                continue
+            filtered.append(record)
+        return filtered
+
+    @staticmethod
+    def _filter_contacts_by_email(contacts: list[dict[str, Any]], email: str | None) -> list[dict[str, Any]]:
+        """Filter contacts locally by email to avoid endpoint-specific condition issues."""
+
+        if not email:
+            return contacts
+
+        target = email.strip().casefold()
+        filtered: list[dict[str, Any]] = []
+        for contact in contacts:
+            communication_items = contact.get("communicationItems") or []
+            communication_values = [
+                (item.get("value") or "").casefold()
+                for item in communication_items
+                if isinstance(item, dict)
+            ]
+            candidates = communication_values + [
+                str(contact.get("defaultEmailAddress") or "").casefold(),
+                str(contact.get("emailAddress") or "").casefold(),
+            ]
+            if any(target in candidate for candidate in candidates if candidate):
+                filtered.append(contact)
+        return filtered
 
     @staticmethod
     def _subtype_matches_type(subtype: dict[str, Any], type_id: int) -> bool:
