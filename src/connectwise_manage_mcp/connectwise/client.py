@@ -563,10 +563,7 @@ class ConnectWiseClient:
         if company_id is not None:
             conditions.append(f'company/id={company_id}')
         if name:
-            escaped = self._escape(name)
-            conditions.append(
-                f'(firstName contains "{escaped}" OR lastName contains "{escaped}" OR nickName contains "{escaped}")'
-            )
+            conditions.append(self._contact_name_condition(name))
 
         params = {
             "page": page,
@@ -576,8 +573,14 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        contacts = await self._request("GET", "/company/contacts", params=params)
-        return self._filter_contacts_by_email(contacts, email)
+        if not email:
+            payload = await self._request("GET", "/company/contacts", params=params)
+            return self._expect_list_response(payload, method="GET", path="/company/contacts")
+
+        return await self._request_filtered_contacts_page(
+            params=params,
+            email=email,
+        )
 
     async def search_members(
         self,
@@ -795,6 +798,62 @@ class ConnectWiseClient:
             if any(target in candidate for candidate in candidates if candidate):
                 filtered.append(contact)
         return filtered
+
+    def _contact_name_condition(self, name: str) -> str:
+        """Build a contact-name query that works for first-name, surname, and full-name input."""
+
+        terms = self._split_search_terms(name)
+        groups = [
+            (
+                f'(firstName contains "{self._escape(term)}" '
+                f'OR lastName contains "{self._escape(term)}" '
+                f'OR nickName contains "{self._escape(term)}")'
+            )
+            for term in terms
+        ]
+        return " AND ".join(groups)
+
+    async def _request_filtered_contacts_page(
+        self,
+        *,
+        params: dict[str, Any],
+        email: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch enough contact pages to build a stable email-filtered result page."""
+
+        page = max(1, int(params.get("page", 1)))
+        requested_size = self._bounded_page_size(params.get("pageSize"))
+
+        base_params = dict(params)
+        base_params["pageSize"] = max(requested_size, self.settings.cw_page_size)
+
+        target_start = (page - 1) * requested_size
+        target_end = target_start + requested_size
+        collected: list[dict[str, Any]] = []
+        upstream_page = 1
+
+        while len(collected) < target_end:
+            page_params = dict(base_params)
+            page_params["page"] = upstream_page
+            payload = await self._request("GET", "/company/contacts", params=page_params)
+            records = self._expect_list_response(payload, method="GET", path="/company/contacts")
+            if not records:
+                break
+
+            collected.extend(self._filter_contacts_by_email(records, email))
+
+            if len(records) < page_params["pageSize"]:
+                break
+            upstream_page += 1
+
+        return collected[target_start:target_end]
+
+    @staticmethod
+    def _split_search_terms(value: str) -> list[str]:
+        """Split free-text search input into non-empty whitespace-separated terms."""
+
+        terms = [part for part in value.split() if part]
+        return terms or [value]
 
     @staticmethod
     def _subtype_matches_type(subtype: dict[str, Any], type_id: int) -> bool:
