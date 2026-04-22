@@ -78,6 +78,27 @@ def _time_entry_summary(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _sla_risk_summary(ticket: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a slim SLA-risk ticket record into a compact result shape."""
+
+    risk = ticket.get("_slaRisk") or {}
+    return {
+        "id": ticket.get("id"),
+        "summary": ticket.get("summary"),
+        "board": (ticket.get("board") or {}).get("name"),
+        "status": (ticket.get("status") or {}).get("name"),
+        "company": (ticket.get("company") or {}).get("name"),
+        "owner": (ticket.get("owner") or {}).get("name"),
+        "priority": (ticket.get("priority") or {}).get("name"),
+        "sla": (ticket.get("sla") or {}).get("name"),
+        "slaStatus": ticket.get("slaStatus"),
+        "stage": risk.get("stage"),
+        "minutesToBreach": risk.get("minutesToBreach"),
+        "breachAt": risk.get("breachAt"),
+        "isInSla": ticket.get("isInSla"),
+    }
+
+
 def _normalize_name(value: str | None) -> str:
     """Return a comparison-friendly representation for ConnectWise name matching."""
 
@@ -395,6 +416,53 @@ async def search_tickets(
         "count": len(tickets),
         "data": [_ticket_summary(ticket) for ticket in tickets],
     }, tickets, include_raw=include_raw)
+
+
+@mcp.tool(description="List active tickets whose next SLA milestone (`Respond`, `Plan`, or `Resolve`) is due within the next `hours` window, default `4`. Use `board` for an exact board-name filter and `company` for a partial company-name filter. Returns near-breach tickets in `data`; set `include_overdue=true` to also return currently overdue active tickets in `overdue`. This is more efficient than broad raw ticket searches because it only fetches the fields needed for SLA risk checks.")
+async def list_tickets_about_to_breach(
+    hours: int = 4,
+    board: str | None = None,
+    company: str | None = None,
+    limit: int = 25,
+    include_overdue: bool = False,
+    include_raw: bool = False,
+) -> dict[str, Any]:
+    """Return active tickets whose next SLA milestone is due soon.
+
+    Args:
+        hours: Size of the forward-looking breach window.
+        board: Optional exact board-name filter.
+        company: Optional partial company-name filter.
+        limit: Maximum number of near-breach tickets to return.
+        include_overdue: When true, also include currently overdue active tickets.
+        include_raw: When true, attach the raw slim ticket records used for the result.
+
+    Returns:
+        A compact SLA-risk result set. ``count`` describes only the near-breach items
+        returned in ``data``. When ``include_overdue`` is true, overdue items are
+        returned separately in ``overdue`` with their own ``overdueCount``.
+    """
+
+    client = ConnectWiseClient()
+    risk_sets = await client.list_tickets_about_to_breach(hours=hours, board=board, company=company)
+    about_to_breach = risk_sets["about_to_breach"][: max(1, limit)]
+    overdue = risk_sets["overdue"][: max(1, limit)] if include_overdue else []
+
+    result = {
+        "ok": True,
+        "windowHours": max(1, hours),
+        "count": len(about_to_breach),
+        "data": [_sla_risk_summary(ticket) for ticket in about_to_breach],
+    }
+    if include_overdue:
+        result["overdueCount"] = len(overdue)
+        result["overdue"] = [_sla_risk_summary(ticket) for ticket in overdue]
+
+    raw_payload = {"about_to_breach": about_to_breach}
+    if include_overdue:
+        raw_payload["overdue"] = overdue
+
+    return _with_optional_raw(result, raw_payload, include_raw=include_raw)
 
 
 @mcp.tool(description="Create a new ConnectWise service ticket. Expects company_id as a numeric id and board as an exact board name. Usually call search_companies first to find company_id, optional search_contacts to find contact_id, and list_boards if the board name is uncertain.")

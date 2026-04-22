@@ -58,6 +58,30 @@ class FakeClient:
     async def get_ticket_time_entries(self, ticket_id: int, **kwargs: Any) -> list[dict[str, Any]]:
         return [{"id": 20, "timeStart": "2026-04-20T15:30:00Z"}]
 
+    async def list_tickets_about_to_breach(self, **kwargs: Any) -> dict[str, list[dict[str, Any]]]:
+        return {
+            "about_to_breach": [
+                {
+                    "id": 42,
+                    "summary": "VPN user locked out",
+                    "board": {"name": "Service Desk"},
+                    "status": {"name": "Assigned"},
+                    "company": {"name": "Example Co"},
+                    "owner": {"name": "Example Owner"},
+                    "priority": {"name": "Priority 2 - High"},
+                    "sla": {"name": "Standard SLA"},
+                    "slaStatus": "Respond by today",
+                    "isInSla": True,
+                    "_slaRisk": {
+                        "stage": "Respond",
+                        "minutesToBreach": 45,
+                        "breachAt": "2026-04-22T10:45:00Z",
+                    },
+                }
+            ],
+            "overdue": [],
+        }
+
 
 @pytest.fixture
 def fake_client(monkeypatch: pytest.MonkeyPatch) -> FakeClient:
@@ -108,6 +132,14 @@ async def test_search_tickets_omits_raw_by_default(fake_client: FakeClient) -> N
 
     assert "raw" not in result
     assert result["data"][0]["summary"] == "VPN issue"
+
+
+async def test_list_tickets_about_to_breach_includes_raw_when_requested(fake_client: FakeClient) -> None:
+    result = await tickets_module.list_tickets_about_to_breach(include_raw=True)
+
+    assert result["count"] == 1
+    assert result["data"][0]["stage"] == "Respond"
+    assert result["raw"]["about_to_breach"][0]["id"] == 42
 
 
 async def test_search_members_handles_string_license_class(fake_client: FakeClient) -> None:
