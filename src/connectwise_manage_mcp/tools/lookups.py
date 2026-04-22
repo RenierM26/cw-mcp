@@ -66,6 +66,12 @@ def _board_team_summary(team: dict[str, Any]) -> dict[str, Any]:
 def _member_summary(member: dict[str, Any]) -> dict[str, Any]:
     """Normalize a member record for assignment and time-entry workflows."""
 
+    license_class = member.get("licenseClass")
+    if isinstance(license_class, dict):
+        license_class_name = license_class.get("name")
+    else:
+        license_class_name = license_class
+
     return {
         "id": member.get("id"),
         "identifier": member.get("identifier"),
@@ -73,7 +79,7 @@ def _member_summary(member: dict[str, Any]) -> dict[str, Any]:
         or " ".join(part for part in [member.get("firstName"), member.get("lastName")] if part),
         "email": member.get("officeEmail"),
         "inactive": member.get("inactiveFlag"),
-        "licenseClass": (member.get("licenseClass") or {}).get("name"),
+        "licenseClass": license_class_name,
     }
 
 

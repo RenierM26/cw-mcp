@@ -29,6 +29,19 @@ class FakeClient:
     async def get_board_teams(self, board_id: int) -> list[dict[str, Any]]:
         return [{"id": 4, "name": "Helpdesk"}]
 
+    async def search_members(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": 311,
+                "identifier": "TKekana",
+                "firstName": "Tshepiso",
+                "lastName": "Kekana",
+                "officeEmail": "tshepiso@example.com",
+                "inactiveFlag": False,
+                "licenseClass": "F",
+            }
+        ]
+
     async def search_tickets(self, **kwargs: Any) -> list[dict[str, Any]]:
         return [{"id": 12345, "summary": "VPN issue", "board": {"name": "Service Desk"}}]
 
@@ -95,3 +108,11 @@ async def test_search_tickets_omits_raw_by_default(fake_client: FakeClient) -> N
 
     assert "raw" not in result
     assert result["data"][0]["summary"] == "VPN issue"
+
+
+async def test_search_members_handles_string_license_class(fake_client: FakeClient) -> None:
+    result = await lookups_module.search_members(name="Tshepiso")
+
+    assert result["count"] == 1
+    assert result["data"][0]["identifier"] == "TKekana"
+    assert result["data"][0]["licenseClass"] == "F"
