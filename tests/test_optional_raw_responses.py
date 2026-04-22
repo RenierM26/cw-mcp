@@ -4,10 +4,10 @@ from typing import Any
 
 import pytest
 
-from connectwise_manage_mcp.tools import companies as companies_module
-from connectwise_manage_mcp.tools import contacts as contacts_module
-from connectwise_manage_mcp.tools import lookups as lookups_module
-from connectwise_manage_mcp.tools import tickets as tickets_module
+import connectwise_manage_mcp.tools.companies as companies_module
+import connectwise_manage_mcp.tools.contacts as contacts_module
+import connectwise_manage_mcp.tools.lookups as lookups_module
+import connectwise_manage_mcp.tools.tickets as tickets_module
 
 
 class FakeClient:
@@ -32,11 +32,11 @@ class FakeClient:
     async def search_members(self, **kwargs: Any) -> list[dict[str, Any]]:
         return [
             {
-                "id": 311,
-                "identifier": "TKekana",
-                "firstName": "Tshepiso",
-                "lastName": "Kekana",
-                "officeEmail": "tshepiso@example.com",
+                "id": 1,
+                "identifier": "member-001",
+                "firstName": "Test",
+                "lastName": "User",
+                "officeEmail": "test.user@example.com",
                 "inactiveFlag": False,
                 "licenseClass": "F",
             }
@@ -111,8 +111,8 @@ async def test_search_tickets_omits_raw_by_default(fake_client: FakeClient) -> N
 
 
 async def test_search_members_handles_string_license_class(fake_client: FakeClient) -> None:
-    result = await lookups_module.search_members(name="Tshepiso")
+    result = await lookups_module.search_members(name="example")
 
     assert result["count"] == 1
-    assert result["data"][0]["identifier"] == "TKekana"
+    assert result["data"][0]["identifier"] == "member-001"
     assert result["data"][0]["licenseClass"] == "F"
