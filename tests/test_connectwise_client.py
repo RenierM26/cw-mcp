@@ -195,24 +195,32 @@ async def test_search_members_raises_clean_error_for_non_list_payload(
 async def test_search_contacts_uses_first_last_nickname_and_filters_email_locally(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("CW_PAGE_SIZE", "1")
+    get_settings.cache_clear()
+
     calls = install_fake_async_client(
         monkeypatch,
         lambda method, url, **kwargs: FakeResponse(
             200,
-            json_data=[
-                {
-                    "id": 1,
-                    "firstName": "Jane",
-                    "lastName": "Smith",
-                    "communicationItems": [{"value": "jane.smith@example.com"}],
-                },
-                {
-                    "id": 2,
-                    "firstName": "Janet",
-                    "lastName": "Other",
-                    "communicationItems": [{"value": "janet@elsewhere.com"}],
-                },
-            ],
+            json_data=(
+                [
+                    {
+                        "id": 2,
+                        "firstName": "Janet",
+                        "lastName": "Other",
+                        "communicationItems": [{"value": "janet@elsewhere.com"}],
+                    }
+                ]
+                if kwargs["params"]["page"] == 1
+                else [
+                    {
+                        "id": 1,
+                        "firstName": "Jane",
+                        "lastName": "Smith",
+                        "communicationItems": [{"value": "jane.smith@example.com"}],
+                    }
+                ]
+            ),
         ),
     )
 
@@ -222,6 +230,25 @@ async def test_search_contacts_uses_first_last_nickname_and_filters_email_locall
     assert [contact["id"] for contact in contacts] == [1]
     assert calls[0]["params"]["conditions"] == (
         '(firstName contains "Jane" OR lastName contains "Jane" OR nickName contains "Jane")'
+    )
+    assert [call["params"]["page"] for call in calls] == [1, 2]
+
+
+async def test_search_contacts_splits_full_name_into_multiple_terms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data=[]),
+    )
+
+    client = ConnectWiseClient()
+    await client.search_contacts(company_id=250, name="Renier Moorcroft")
+
+    assert calls[0]["params"]["conditions"] == (
+        'company/id=250 and '
+        '(firstName contains "Renier" OR lastName contains "Renier" OR nickName contains "Renier") AND '
+        '(firstName contains "Moorcroft" OR lastName contains "Moorcroft" OR nickName contains "Moorcroft")'
     )
 
 
