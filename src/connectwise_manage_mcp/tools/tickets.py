@@ -418,7 +418,7 @@ async def search_tickets(
     }, tickets, include_raw=include_raw)
 
 
-@mcp.tool(description="List active tickets whose next SLA milestone is about to breach within a chosen window. This is more efficient than broad raw ticket searches because it only fetches the fields needed for SLA risk checks. Use include_overdue=true when you also want currently overdue active tickets in the same response.")
+@mcp.tool(description="List active tickets whose next SLA milestone (`Respond`, `Plan`, or `Resolve`) is due within the next `hours` window, default `4`. Use `board` for an exact board-name filter and `company` for a partial company-name filter. Returns near-breach tickets in `data`; set `include_overdue=true` to also return currently overdue active tickets in `overdue`. This is more efficient than broad raw ticket searches because it only fetches the fields needed for SLA risk checks.")
 async def list_tickets_about_to_breach(
     hours: int = 4,
     board: str | None = None,
@@ -438,7 +438,9 @@ async def list_tickets_about_to_breach(
         include_raw: When true, attach the raw slim ticket records used for the result.
 
     Returns:
-        A compact SLA-risk result set with near-breach tickets and optional overdue tickets.
+        A compact SLA-risk result set. ``count`` describes only the near-breach items
+        returned in ``data``. When ``include_overdue`` is true, overdue items are
+        returned separately in ``overdue`` with their own ``overdueCount``.
     """
 
     client = ConnectWiseClient()
