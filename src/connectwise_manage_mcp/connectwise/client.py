@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json as jsonlib
 from typing import Any
 
 import httpx
@@ -108,6 +109,21 @@ class ConnectWiseClient:
             raise ConnectWiseError(
                 f"ConnectWise returned a non-JSON response for {method} {path}."
             ) from exc
+
+    def _expect_list_response(self, payload: Any, *, method: str, path: str) -> list[dict[str, Any]]:
+        """Return list payloads unchanged, or raise a clear error for unexpected shapes."""
+
+        if isinstance(payload, list):
+            return payload
+
+        if isinstance(payload, dict):
+            detail = jsonlib.dumps(payload)[:1000]
+        else:
+            detail = repr(payload)[:1000]
+
+        raise ConnectWiseError(
+            f"ConnectWise returned an unexpected non-list response for {method} {path}: {detail}"
+        )
 
     async def healthcheck(self) -> dict[str, Any]:
         """Fetch basic system information to verify API reachability."""
@@ -580,7 +596,7 @@ class ConnectWiseClient:
         if name:
             escaped = self._escape(name)
             conditions.append(
-                f'(firstName contains "{escaped}" OR lastName contains "{escaped}" OR officeEmail contains "{escaped}")'
+                f'(firstName contains "{escaped}" or lastName contains "{escaped}" or officeEmail contains "{escaped}")'
             )
 
         params = {
@@ -591,7 +607,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        members = await self._request("GET", "/system/members", params=params)
+        payload = await self._request("GET", "/system/members", params=params)
+        members = self._expect_list_response(payload, method="GET", path="/system/members")
         return self._filter_inactive_records(members, inactive)
 
     async def list_work_types(
@@ -616,7 +633,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        work_types = await self._request("GET", "/time/workTypes", params=params)
+        payload = await self._request("GET", "/time/workTypes", params=params)
+        work_types = self._expect_list_response(payload, method="GET", path="/time/workTypes")
         return self._filter_inactive_records(work_types, inactive)
 
     async def list_work_roles(
@@ -641,7 +659,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        work_roles = await self._request("GET", "/time/workRoles", params=params)
+        payload = await self._request("GET", "/time/workRoles", params=params)
+        work_roles = self._expect_list_response(payload, method="GET", path="/time/workRoles")
         return self._filter_inactive_records(work_roles, inactive)
 
     async def list_locations(
@@ -666,7 +685,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        locations = await self._request("GET", "/system/locations", params=params)
+        payload = await self._request("GET", "/system/locations", params=params)
+        locations = self._expect_list_response(payload, method="GET", path="/system/locations")
         return self._filter_inactive_records(locations, inactive)
 
     @staticmethod

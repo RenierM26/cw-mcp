@@ -153,6 +153,45 @@ async def test_search_tickets_clamps_negative_page_size_to_one(
     assert calls[0]["params"]["pageSize"] == 1
 
 
+async def test_search_members_builds_expected_conditions(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data=[]),
+    )
+
+    client = ConnectWiseClient()
+    await client.search_members(identifier='member"-001', name="example", inactive=False, page=2, page_size=5)
+
+    params = calls[0]["params"]
+    assert params["page"] == 2
+    assert params["pageSize"] == 5
+    assert params["orderBy"] == "identifier asc"
+    assert params["conditions"] == (
+        'identifier contains "member\\"-001" and '
+        '(firstName contains "example" or lastName contains "example" or officeEmail contains "example")'
+    )
+
+
+async def test_search_members_raises_clean_error_for_non_list_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(
+            200,
+            json_data={"code": "BadRequest", "message": "Invalid conditions expression"},
+        ),
+    )
+
+    client = ConnectWiseClient()
+
+    with pytest.raises(
+        ConnectWiseError,
+        match=r"unexpected non-list response for GET /system/members: .*Invalid conditions expression",
+    ):
+        await client.search_members(name="example")
+
+
 async def test_search_contacts_uses_first_last_nickname_and_filters_email_locally(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
