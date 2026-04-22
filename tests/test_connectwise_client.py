@@ -153,6 +153,67 @@ async def test_search_tickets_clamps_negative_page_size_to_one(
     assert calls[0]["params"]["pageSize"] == 1
 
 
+async def test_list_tickets_about_to_breach_uses_slim_fields_and_filters_active_statuses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = client_module.dt.datetime.now(client_module.dt.timezone.utc).replace(microsecond=0)
+
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(
+            200,
+            json_data=(
+                [
+                    {
+                        "id": 1,
+                        "summary": "VPN user locked out",
+                        "board": {"name": "Service Desk"},
+                        "status": {"name": "Assigned"},
+                        "company": {"name": "Example Co"},
+                        "owner": {"name": "Example Owner"},
+                        "priority": {"name": "Priority 2 - High"},
+                        "sla": {"name": "Standard SLA"},
+                        "slaStatus": "Respond soon",
+                        "respondByGoalUTC": (now + client_module.dt.timedelta(minutes=45)).isoformat().replace("+00:00", "Z"),
+                    },
+                    {
+                        "id": 2,
+                        "summary": "Old closed ticket",
+                        "board": {"name": "Service Desk"},
+                        "status": {"name": ">Closed"},
+                        "company": {"name": "Example Co"},
+                        "resolutionGoalUTC": (now + client_module.dt.timedelta(minutes=20)).isoformat().replace("+00:00", "Z"),
+                    },
+                    {
+                        "id": 3,
+                        "summary": "Already overdue",
+                        "board": {"name": "Service Desk"},
+                        "status": {"name": "In Progress"},
+                        "company": {"name": "Example Co"},
+                        "resolutionGoalUTC": (now - client_module.dt.timedelta(minutes=30)).isoformat().replace("+00:00", "Z"),
+                    },
+                ]
+                if kwargs["params"]["page"] == 1
+                else []
+            ),
+        ),
+    )
+
+    client = ConnectWiseClient()
+    result = await client.list_tickets_about_to_breach(hours=2, board="Service Desk", company="Example")
+
+    assert [ticket["id"] for ticket in result["about_to_breach"]] == [1]
+    assert [ticket["id"] for ticket in result["overdue"]] == [3]
+    assert result["about_to_breach"][0]["_slaRisk"]["stage"] == "Respond"
+    assert calls[0]["params"]["conditions"] == (
+        'closedFlag=false and board/name="Service Desk" and company/name contains "Example"'
+    )
+    assert calls[0]["params"]["fields"] == (
+        "id,summary,closedFlag,isInSla,slaStatus,board/name,status/name,company/name,owner/name,priority/name,sla/name,"
+        "respondByGoalUTC,dateResponded,resplanGoalUTC,dateResplan,resolutionGoalUTC"
+    )
+
+
 async def test_search_members_builds_expected_conditions(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = install_fake_async_client(
         monkeypatch,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import json as jsonlib
 from typing import Any
 
@@ -178,6 +179,91 @@ class ConnectWiseClient:
             params["conditions"] = " and ".join(conditions)
 
         return await self._request("GET", "/service/tickets", params=params)
+
+    async def list_tickets_about_to_breach(
+        self,
+        *,
+        hours: int = 4,
+        board: str | None = None,
+        company: str | None = None,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Return compact ticket sets for near-breach and overdue SLA review."""
+
+        conditions = ["closedFlag=false"]
+        if board:
+            conditions.append(f'board/name="{self._escape(board)}"')
+        if company:
+            conditions.append(f'company/name contains "{self._escape(company)}"')
+
+        page_size = self.settings.cw_max_page_size
+        page = 1
+        params = {
+            "conditions": " and ".join(conditions),
+            "fields": ",".join([
+                "id",
+                "summary",
+                "closedFlag",
+                "isInSla",
+                "slaStatus",
+                "board/name",
+                "status/name",
+                "company/name",
+                "owner/name",
+                "priority/name",
+                "sla/name",
+                "respondByGoalUTC",
+                "dateResponded",
+                "resplanGoalUTC",
+                "dateResplan",
+                "resolutionGoalUTC",
+            ]),
+            "page": page,
+            "pageSize": page_size,
+            "orderBy": "id desc",
+        }
+
+        now = dt.datetime.now(dt.timezone.utc)
+        window_minutes = max(1, hours) * 60
+        about_to_breach: list[dict[str, Any]] = []
+        overdue: list[dict[str, Any]] = []
+
+        while True:
+            payload = await self._request("GET", "/service/tickets", params=params)
+            tickets = self._expect_list_response(payload, method="GET", path="/service/tickets")
+            if not tickets:
+                break
+
+            for ticket in tickets:
+                status_name = (ticket.get("status") or {}).get("name")
+                if not self._status_is_active(status_name):
+                    continue
+
+                milestone = self._next_sla_milestone(ticket)
+                if milestone is None:
+                    continue
+
+                stage, due = milestone
+                minutes_to_breach = round((due - now).total_seconds() / 60)
+                enriched_ticket = dict(ticket)
+                enriched_ticket["_slaRisk"] = {
+                    "stage": stage,
+                    "minutesToBreach": minutes_to_breach,
+                    "breachAt": due.isoformat().replace("+00:00", "Z"),
+                }
+
+                if minutes_to_breach < 0:
+                    overdue.append(enriched_ticket)
+                elif minutes_to_breach <= window_minutes:
+                    about_to_breach.append(enriched_ticket)
+
+            if len(tickets) < page_size:
+                break
+            page += 1
+            params["page"] = page
+
+        about_to_breach.sort(key=lambda ticket: (ticket["_slaRisk"]["minutesToBreach"], ticket.get("id") or 0))
+        overdue.sort(key=lambda ticket: (ticket["_slaRisk"]["minutesToBreach"], ticket.get("id") or 0))
+        return {"about_to_breach": about_to_breach, "overdue": overdue}
 
     async def create_ticket(
         self,
@@ -705,6 +791,47 @@ class ConnectWiseClient:
         """Escape double quotes for ConnectWise conditions expressions."""
 
         return value.replace('"', '\\"')
+
+    @staticmethod
+    def _status_is_active(status_name: str | None) -> bool:
+        """Return whether a status name looks active enough for SLA risk checks."""
+
+        if not status_name:
+            return True
+
+        lowered = status_name.strip().casefold()
+        inactive_markers = ("closed", "cancel", "off board", "complete")
+        return not any(marker in lowered for marker in inactive_markers)
+
+    @staticmethod
+    def _parse_api_datetime(value: Any) -> dt.datetime | None:
+        """Parse a ConnectWise ISO timestamp into an aware UTC datetime."""
+
+        if not isinstance(value, str) or not value:
+            return None
+
+        candidate = value[:-1] + "+00:00" if value.endswith("Z") else value
+        try:
+            return dt.datetime.fromisoformat(candidate)
+        except ValueError:
+            return None
+
+    def _next_sla_milestone(self, ticket: dict[str, Any]) -> tuple[str, dt.datetime] | None:
+        """Return the next active SLA milestone for a ticket, if one is available."""
+
+        respond_goal = self._parse_api_datetime(ticket.get("respondByGoalUTC"))
+        resplan_goal = self._parse_api_datetime(ticket.get("resplanGoalUTC"))
+        resolution_goal = self._parse_api_datetime(ticket.get("resolutionGoalUTC"))
+        date_responded = self._parse_api_datetime(ticket.get("dateResponded"))
+        date_resplan = self._parse_api_datetime(ticket.get("dateResplan"))
+
+        if respond_goal and date_responded is None:
+            return ("Respond", respond_goal)
+        if resplan_goal and date_resplan is None:
+            return ("Plan", resplan_goal)
+        if resolution_goal:
+            return ("Resolve", resolution_goal)
+        return None
 
     @staticmethod
     def _filter_inactive_records(records: list[dict[str, Any]], inactive: bool | None) -> list[dict[str, Any]]:
