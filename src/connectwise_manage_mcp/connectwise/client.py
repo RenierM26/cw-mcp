@@ -607,7 +607,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        members = await self._request("GET", "/system/members", params=params)
+        payload = await self._request("GET", "/system/members", params=params)
+        members = self._expect_list_response(payload, method="GET", path="/system/members")
         return self._filter_inactive_records(members, inactive)
 
     async def list_work_types(
@@ -632,7 +633,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        work_types = await self._request("GET", "/time/workTypes", params=params)
+        payload = await self._request("GET", "/time/workTypes", params=params)
+        work_types = self._expect_list_response(payload, method="GET", path="/time/workTypes")
         return self._filter_inactive_records(work_types, inactive)
 
     async def list_work_roles(
@@ -657,7 +659,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        work_roles = await self._request("GET", "/time/workRoles", params=params)
+        payload = await self._request("GET", "/time/workRoles", params=params)
+        work_roles = self._expect_list_response(payload, method="GET", path="/time/workRoles")
         return self._filter_inactive_records(work_roles, inactive)
 
     async def list_locations(
@@ -682,7 +685,8 @@ class ConnectWiseClient:
         if conditions:
             params["conditions"] = " and ".join(conditions)
 
-        locations = await self._request("GET", "/system/locations", params=params)
+        payload = await self._request("GET", "/system/locations", params=params)
+        locations = self._expect_list_response(payload, method="GET", path="/system/locations")
         return self._filter_inactive_records(locations, inactive)
 
     @staticmethod

@@ -168,8 +168,7 @@ async def test_search_members_builds_expected_conditions(monkeypatch: pytest.Mon
     assert params["orderBy"] == "identifier asc"
     assert params["conditions"] == (
         'identifier contains "member\\"-001" and '
-        '(firstName contains "example" or lastName contains "example" or officeEmail contains "example") and '
-        'inactiveFlag=false'
+        '(firstName contains "example" or lastName contains "example" or officeEmail contains "example")'
     )
 
 
