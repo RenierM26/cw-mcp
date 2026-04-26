@@ -268,3 +268,16 @@ async def test_update_ticket_type_hierarchy_fast_uses_single_patch_surface(
     assert fake_client.updated_classifications["type_name"] == "Incident"
     assert fake_client.updated_classifications["sub_type_name"] == "Software"
     assert fake_client.updated_classifications["item_name"] == "Fix/Restore"
+
+
+async def test_update_ticket_details_tool_updates_summary(fake_client: FakeClient) -> None:
+    async def update_ticket_details(ticket_id: int, **kwargs: Any) -> dict[str, Any]:
+        return {"id": ticket_id, **kwargs}
+
+    fake_client.update_ticket_details = update_ticket_details  # type: ignore[attr-defined]
+
+    result = await tickets_module.update_ticket_details(12345, summary="Updated subject")
+
+    assert result["ok"] is True
+    assert result["ticketId"] == 12345
+    assert result["updated"]["summary"] == "Updated subject"

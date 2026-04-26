@@ -301,6 +301,27 @@ class ConnectWiseClient:
             payload["priority"] = {"name": priority}
         return await self._request("POST", "/service/tickets", json=payload)
 
+
+    async def update_ticket_details(
+        self,
+        ticket_id: int,
+        *,
+        summary: str | None = None,
+        initial_description: str | None = None,
+    ) -> dict[str, Any]:
+        """Patch basic ticket text fields."""
+
+        patches: list[dict[str, Any]] = []
+        if summary is not None:
+            patches.append({"op": "replace", "path": "summary", "value": summary})
+        if initial_description is not None:
+            patches.append({"op": "replace", "path": "initialDescription", "value": initial_description})
+
+        if not patches:
+            raise ConnectWiseError("No ticket detail fields were provided to update.")
+
+        return await self._request("PATCH", f"/service/tickets/{ticket_id}", json=patches)
+
     async def update_ticket_status(self, ticket_id: int, status: str) -> dict[str, Any]:
         """Replace the current ticket status by name."""
 

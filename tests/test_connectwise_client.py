@@ -572,3 +572,35 @@ def test_update_ticket_classifications_rejects_priority_name_and_id() -> None:
         import asyncio
 
         asyncio.run(client.update_ticket_classifications(12345, priority="Priority 4 - Low", priority_id=7))
+
+
+async def test_update_ticket_details_patches_summary_and_initial_description(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data={"id": 12345}),
+    )
+
+    client = ConnectWiseClient()
+    await client.update_ticket_details(
+        12345,
+        summary="Updated subject",
+        initial_description="Updated initial description",
+    )
+
+    assert calls[0]["method"] == "PATCH"
+    assert calls[0]["url"].endswith("/service/tickets/12345")
+    assert {"op": "replace", "path": "summary", "value": "Updated subject"} in calls[0]["json"]
+    assert {
+        "op": "replace",
+        "path": "initialDescription",
+        "value": "Updated initial description",
+    } in calls[0]["json"]
+
+
+async def test_update_ticket_details_requires_a_field() -> None:
+    client = ConnectWiseClient()
+
+    with pytest.raises(ConnectWiseError, match="No ticket detail fields"):
+        await client.update_ticket_details(12345)
