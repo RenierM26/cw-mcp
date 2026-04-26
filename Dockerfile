@@ -12,7 +12,7 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 
 RUN pip install --no-cache-dir . \
-    && pip uninstall -y setuptools wheel
+    && pip uninstall -y pip setuptools wheel
 
 USER app
 
