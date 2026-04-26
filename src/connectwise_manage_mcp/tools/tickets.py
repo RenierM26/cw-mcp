@@ -722,6 +722,43 @@ async def update_ticket_classifications_fast(
     }
 
 
+@mcp.tool(description="n8n-friendly fast path to set a ticket's board/type/subtype/item hierarchy. Requires only ticket_id, numeric board_id, and the target type_name, sub_type_name, and item_name. Performs exactly one ConnectWise PATCH call and does not call get_ticket or lookup tools. Use when n8n already has a cached/known mapping for board/type/subtype/item values.")
+async def update_ticket_type_hierarchy_fast(
+    ticket_id: int,
+    board_id: int,
+    type_name: str,
+    sub_type_name: str,
+    item_name: str,
+) -> dict[str, Any]:
+    """Patch only board/type/subtype/item without preflight reads.
+
+    This narrow tool is intended for high-volume automation surfaces where broad optional
+    classification fields are inconvenient and the workflow already knows the exact
+    board hierarchy values to apply.
+    """
+
+    client = ConnectWiseClient()
+    result = await client.update_ticket_classifications(
+        ticket_id,
+        board_id=board_id,
+        type_name=type_name,
+        sub_type_name=sub_type_name,
+        item_name=item_name,
+    )
+    return {
+        "ok": True,
+        "ticketId": ticket_id,
+        "validated": False,
+        "updated": {
+            "boardId": board_id,
+            "type": type_name,
+            "subType": sub_type_name,
+            "item": item_name,
+        },
+        "data": result,
+    }
+
+
 @mcp.tool(description="Add a time entry against a ConnectWise service ticket. Expects member_identifier as the exact ConnectWise member identifier string, not the numeric member id. work_type and work_role are exact names, not ids. location_id is an optional numeric location id. Recommended sequence: search_members, optional list_locations, list_work_types, list_work_roles, then add_ticket_time_entry. If time entry creation fails because of location restrictions, call list_locations and retry with an allowed location_id.")
 async def add_ticket_time_entry(
     ticket_id: int,
