@@ -15,6 +15,9 @@ class FakeClient:
         self.added_time_entry: dict[str, Any] | None = None
         self.added_schedule_entry: dict[str, Any] | None = None
         self.updated_schedule_entry: dict[str, Any] | None = None
+        self.notes: list[dict[str, Any]] = []
+        self.deleted_note_ids: list[int] = []
+        self.updated_note: dict[str, Any] | None = None
 
     async def get_ticket(self, ticket_id: int) -> dict[str, Any]:
         return {
@@ -81,6 +84,35 @@ class FakeClient:
             "notes": kwargs.get("notes"),
             "internalNotes": kwargs.get("internal_notes"),
         }
+
+
+    async def add_ticket_note(self, ticket_id: int, text: str, internal: bool = True) -> dict[str, Any]:
+        note = {
+            "id": 100 + len(self.notes),
+            "text": text,
+            "internalAnalysisFlag": internal,
+            "member": {"id": 192, "identifier": "Flowgear"},
+        }
+        self.notes.append(note)
+        return note
+
+    async def get_ticket_notes(self, ticket_id: int, **kwargs: Any) -> list[dict[str, Any]]:
+        return list(self.notes)
+
+    async def update_ticket_note(self, ticket_id: int, note_id: int, **kwargs: Any) -> dict[str, Any]:
+        self.updated_note = {"ticket_id": ticket_id, "note_id": note_id, **kwargs}
+        for note in self.notes:
+            if note["id"] == note_id:
+                note["text"] = kwargs["text"]
+                if kwargs.get("internal") is not None:
+                    note["internalAnalysisFlag"] = kwargs["internal"]
+                return note
+        return {"id": note_id, "text": kwargs["text"], "internalAnalysisFlag": kwargs.get("internal")}
+
+    async def delete_ticket_note(self, ticket_id: int, note_id: int) -> dict[str, Any]:
+        self.deleted_note_ids.append(note_id)
+        self.notes = [note for note in self.notes if note["id"] != note_id]
+        return {"ok": True}
 
     async def get_ticket_schedule_entries(self, ticket_id: int, **kwargs: Any) -> list[dict[str, Any]]:
         return [{"id": 88, "objectId": ticket_id, "member": {"identifier": "helpdesk1"}, "doneFlag": False}]
@@ -367,3 +399,59 @@ async def test_get_ticket_schedule_entries_returns_summaries(fake_client: FakeCl
             "closeDate": None,
         }
     ]
+
+
+async def test_upsert_managed_internal_note_creates_when_missing(fake_client: FakeClient) -> None:
+    result = await tickets_module.upsert_managed_internal_note(
+        12345,
+        "Ticket summary content",
+    )
+
+    assert result["action"] == "created"
+    assert result["apiMemberId"] == 192
+    assert fake_client.notes[0]["internalAnalysisFlag"] is True
+    assert fake_client.notes[0]["text"].startswith("[cw-mcp-managed-note:llm-ticket-summary]")
+    assert "Ticket summary content" in fake_client.notes[0]["text"]
+
+
+async def test_upsert_managed_internal_note_updates_one_and_deletes_duplicates(fake_client: FakeClient) -> None:
+    marker = "[cw-mcp-managed-note:llm-ticket-summary]"
+    fake_client.notes = [
+        {"id": 1, "text": f"{marker}\n\nOld", "internalAnalysisFlag": True, "member": {"id": 192}},
+        {"id": 2, "text": f"{marker}\n\nOld duplicate", "internalAnalysisFlag": True, "member": {"id": 192}},
+        {"id": 3, "text": f"{marker}\n\nOther member", "internalAnalysisFlag": True, "member": {"id": 999}},
+    ]
+
+    result = await tickets_module.upsert_managed_internal_note(
+        12345,
+        "New content",
+    )
+
+    assert result["action"] == "updated"
+    assert result["noteId"] == 1
+    assert result["apiMemberId"] == 192
+    assert result["deletedDuplicateNoteIds"] == [2]
+    assert fake_client.deleted_note_ids == [2]
+    assert fake_client.updated_note == {
+        "ticket_id": 12345,
+        "note_id": 1,
+        "text": "[cw-mcp-managed-note:llm-ticket-summary]\n\nNew content",
+        "internal": True,
+    }
+    assert {note["id"] for note in fake_client.notes} == {1, 3}
+
+
+async def test_upsert_managed_internal_note_coalesces_exact_duplicate_content(fake_client: FakeClient) -> None:
+    fake_client.notes = [
+        {"id": 1, "text": "Same summary", "internalAnalysisFlag": True, "member": {"id": 192}},
+        {"id": 2, "text": "Same summary", "internalAnalysisFlag": True, "member": {"id": 192}},
+    ]
+
+    result = await tickets_module.upsert_managed_internal_note(
+        12345,
+        "Same summary",
+    )
+
+    assert result["action"] == "updated"
+    assert result["deletedDuplicateNoteIds"] == [2]
+    assert fake_client.notes[0]["text"] == "[cw-mcp-managed-note:llm-ticket-summary]\n\nSame summary"

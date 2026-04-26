@@ -726,3 +726,33 @@ async def test_update_schedule_entry_requires_a_field() -> None:
 
     with pytest.raises(ConnectWiseError, match="No schedule entry fields"):
         await client.update_schedule_entry(88)
+
+
+async def test_update_ticket_note_patches_text_and_internal_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data={"id": 77}),
+    )
+
+    client = ConnectWiseClient()
+    await client.update_ticket_note(12345, 77, text="Updated", internal=True)
+
+    assert calls[0]["method"] == "PATCH"
+    assert calls[0]["url"].endswith("/service/tickets/12345/notes/77")
+    assert calls[0]["json"] == [
+        {"op": "replace", "path": "text", "value": "Updated"},
+        {"op": "replace", "path": "internalAnalysisFlag", "value": True},
+    ]
+
+
+async def test_delete_ticket_note_uses_ticket_note_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(204),
+    )
+
+    client = ConnectWiseClient()
+    await client.delete_ticket_note(12345, 77)
+
+    assert calls[0]["method"] == "DELETE"
+    assert calls[0]["url"].endswith("/service/tickets/12345/notes/77")

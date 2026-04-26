@@ -449,6 +449,27 @@ class ConnectWiseClient:
         }
         return await self._request("POST", f"/service/tickets/{ticket_id}/notes", json=payload)
 
+
+    async def update_ticket_note(
+        self,
+        ticket_id: int,
+        note_id: int,
+        *,
+        text: str,
+        internal: bool | None = None,
+    ) -> dict[str, Any]:
+        """Patch a ticket note's text and optionally its internal flag."""
+
+        patches: list[dict[str, Any]] = [{"op": "replace", "path": "text", "value": text}]
+        if internal is not None:
+            patches.append({"op": "replace", "path": "internalAnalysisFlag", "value": internal})
+        return await self._request("PATCH", f"/service/tickets/{ticket_id}/notes/{note_id}", json=patches)
+
+    async def delete_ticket_note(self, ticket_id: int, note_id: int) -> dict[str, Any]:
+        """Delete a note from a service ticket."""
+
+        return await self._request("DELETE", f"/service/tickets/{ticket_id}/notes/{note_id}")
+
     async def get_ticket_notes(
         self,
         ticket_id: int,
