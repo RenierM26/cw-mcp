@@ -8,6 +8,7 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ### Added
 
+- Added `update_ticket_classifications_fast` for high-volume automation flows that already know valid ticket classification values and need to avoid preflight read/lookup calls.
 - `update_ticket_classifications` now accepts numeric `board_id` to move tickets without first resolving the board name.
 - Preflight configuration CLI (`cwmcp-preflight`) for local/deployment validation without calling ConnectWise.
 - CI gates for Ruff, mypy, pytest, Docker image build, and runtime container smoke testing.

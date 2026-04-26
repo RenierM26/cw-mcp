@@ -192,3 +192,41 @@ async def test_update_ticket_classifications_rejects_board_and_board_id(
         await tickets_module.update_ticket_classifications(12345, board="Service Desk", board_id=12)
 
     assert fake_client.updated_classifications is None
+
+
+async def test_update_ticket_classifications_fast_skips_preflight_reads(
+    fake_client: FakeClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail_get_ticket(ticket_id: int) -> dict[str, Any]:
+        raise AssertionError("get_ticket should not be called by fast classification updates")
+
+    async def fail_statuses(board_id: int) -> list[dict[str, Any]]:
+        raise AssertionError("lookup validation should not run for fast classification updates")
+
+    monkeypatch.setattr(fake_client, "get_ticket", fail_get_ticket)
+    monkeypatch.setattr(fake_client, "get_board_statuses", fail_statuses)
+
+    result = await tickets_module.update_ticket_classifications_fast(
+        12345,
+        board_id=12,
+        status="In Progress",
+        type_name="Incident",
+    )
+
+    assert result["ok"] is True
+    assert result["validated"] is False
+    assert fake_client.updated_classifications == {
+        "ticket_id": 12345,
+        "status": "In Progress",
+        "priority": None,
+        "board": None,
+        "board_id": 12,
+        "type_name": "Incident",
+        "sub_type_name": None,
+        "item_name": None,
+        "team": None,
+        "severity": None,
+        "impact": None,
+        "source": None,
+    }

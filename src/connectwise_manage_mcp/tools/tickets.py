@@ -659,6 +659,69 @@ async def update_ticket_classifications(
     }
 
 
+@mcp.tool(description="Fast automation path for high-volume n8n-style ticket updates. Patches known classification values directly without get_ticket or lookup validation, so it usually makes exactly one ConnectWise PATCH call. Use only when workflow data already contains valid board/status/type/subtype/item/team/priority/severity/impact/source values. Board can be supplied as exact board name via board or numeric board_id. If validate=true, use update_ticket_classifications instead.")
+async def update_ticket_classifications_fast(
+    ticket_id: int,
+    status: str | None = None,
+    priority: str | None = None,
+    board: str | None = None,
+    board_id: int | None = None,
+    type_name: str | None = None,
+    sub_type_name: str | None = None,
+    item_name: str | None = None,
+    team: str | None = None,
+    severity: str | None = None,
+    impact: str | None = None,
+    source: str | None = None,
+) -> dict[str, Any]:
+    """Patch ticket classifications without preflight reads.
+
+    This is intentionally optimized for deterministic automation flows where the caller
+    already has valid ConnectWise values, for example n8n jobs processing many tickets
+    from a known board/status mapping. It avoids the safe tool's ``get_ticket`` and
+    board lookup validation calls.
+
+    Trade-off:
+        Faster and cheaper, but ConnectWise returns the validation error directly if a
+        supplied value is invalid for the ticket's board or hierarchy.
+    """
+
+    client = ConnectWiseClient()
+    result = await client.update_ticket_classifications(
+        ticket_id,
+        status=status,
+        priority=priority,
+        board=board,
+        board_id=board_id,
+        type_name=type_name,
+        sub_type_name=sub_type_name,
+        item_name=item_name,
+        team=team,
+        severity=severity,
+        impact=impact,
+        source=source,
+    )
+    return {
+        "ok": True,
+        "ticketId": ticket_id,
+        "validated": False,
+        "updated": {
+            "status": status,
+            "priority": priority,
+            "board": board,
+            "boardId": board_id,
+            "type": type_name,
+            "subType": sub_type_name,
+            "item": item_name,
+            "team": team,
+            "severity": severity,
+            "impact": impact,
+            "source": source,
+        },
+        "data": result,
+    }
+
+
 @mcp.tool(description="Add a time entry against a ConnectWise service ticket. Expects member_identifier as the exact ConnectWise member identifier string, not the numeric member id. work_type and work_role are exact names, not ids. location_id is an optional numeric location id. Recommended sequence: search_members, optional list_locations, list_work_types, list_work_roles, then add_ticket_time_entry. If time entry creation fails because of location restrictions, call list_locations and retry with an allowed location_id.")
 async def add_ticket_time_entry(
     ticket_id: int,
