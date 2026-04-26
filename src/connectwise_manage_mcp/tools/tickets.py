@@ -722,7 +722,7 @@ async def update_ticket_classifications_fast(
     }
 
 
-@mcp.tool(description="n8n-friendly fast path to set a ticket's board/type/subtype/item hierarchy. Requires only ticket_id, numeric board_id, and the target type_name, sub_type_name, and item_name. Performs exactly one ConnectWise PATCH call and does not call get_ticket or lookup tools. Use when n8n already has a cached/known mapping for board/type/subtype/item values.")
+@mcp.tool(description="Update a ticket classification after choosing type, subtype, and item. Required inputs: ticket_id, board_id, type_name, sub_type_name, item_name. This makes one PATCH call. It does not check if the names are valid. For the correct order, first call get_ticket_type_hierarchy: choose type, then subtype, then item.")
 async def update_ticket_type_hierarchy_fast(
     ticket_id: int,
     board_id: int,

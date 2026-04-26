@@ -26,6 +26,12 @@ class FakeClient:
     async def get_board_types(self, board_id: int) -> list[dict[str, Any]]:
         return [{"id": 3, "name": "Incident"}]
 
+    async def get_board_subtypes(self, board_id: int, type_id: int) -> list[dict[str, Any]]:
+        return [{"id": 9, "name": "Remote Access"}]
+
+    async def get_board_items(self, board_id: int, type_id: int, subtype_id: int) -> list[dict[str, Any]]:
+        return [{"id": 14, "name": "VPN"}]
+
     async def get_board_teams(self, board_id: int) -> list[dict[str, Any]]:
         return [{"id": 4, "name": "Helpdesk"}]
 
@@ -148,3 +154,18 @@ async def test_search_members_handles_string_license_class(fake_client: FakeClie
     assert result["count"] == 1
     assert result["data"][0]["identifier"] == "member-001"
     assert result["data"][0]["licenseClass"] == "F"
+
+
+async def test_get_ticket_type_hierarchy_returns_only_type_tree(fake_client: FakeClient) -> None:
+    result = await lookups_module.get_ticket_type_hierarchy(board_id=12, type_id=3, subtype_id=9)
+
+    assert result["ok"] is True
+    assert result["boardId"] == 12
+    assert result["typeId"] == 3
+    assert result["subtypeId"] == 9
+    assert "statuses" not in result
+    assert "teams" not in result
+    assert result["types"] == [{"id": 3, "name": "Incident", "inactive": None, "defaultFlag": None}]
+    assert result["subtypes"] == [{"id": 9, "name": "Remote Access", "inactive": None, "defaultFlag": None}]
+    assert result["items"] == [{"id": 14, "name": "VPN", "inactive": None, "defaultFlag": None}]
+    assert result["nextStep"] == "choose type name, subtype name, and item name, then call update_ticket_type_hierarchy_fast"

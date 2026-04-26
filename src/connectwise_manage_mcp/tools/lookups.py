@@ -217,7 +217,7 @@ async def get_board_statuses(board_id: int, include_raw: bool = False) -> dict[s
     }, statuses, include_raw=include_raw)
 
 
-@mcp.tool(description="Get service board types for a board id. Expects a numeric board_id and returns type ids plus names. Usually call list_boards first if you only know the board name.")
+@mcp.tool(description="Step 1 for ticket classification. Give board_id. Returns type ids and type names for that board. Choose one type before asking for subtypes.")
 async def get_board_types(board_id: int, include_raw: bool = False) -> dict[str, Any]:
     """Fetch board types for a specific service board."""
 
@@ -231,7 +231,7 @@ async def get_board_types(board_id: int, include_raw: bool = False) -> dict[str,
     }, board_types, include_raw=include_raw)
 
 
-@mcp.tool(description="Get service board subtypes for a numeric board_id and type_id pair. Use this when a smaller hierarchy-specific lookup is easier than get_board_lookup. Subtypes are type-specific, so choose type_id first and then use the returned subtype names in update_ticket_classifications.")
+@mcp.tool(description="Step 2 for ticket classification. Give board_id and the chosen type_id. Returns subtype ids and subtype names. Choose one subtype before asking for items.")
 async def get_board_subtypes(board_id: int, type_id: int, include_raw: bool = False) -> dict[str, Any]:
     """Fetch board subtypes for a specific board type."""
 
@@ -246,7 +246,7 @@ async def get_board_subtypes(board_id: int, type_id: int, include_raw: bool = Fa
     }, subtypes, include_raw=include_raw)
 
 
-@mcp.tool(description="Get service board items for a numeric board_id, type_id, and subtype_id combination. Important hierarchy rule: items are valid only within the chosen type and subtype pair, so do not pick item_name before type_name and sub_type_name are settled. Returns item ids plus names that can then be used to choose the item name for ticket updates.")
+@mcp.tool(description="Step 3 for ticket classification. Give board_id, chosen type_id, and chosen subtype_id. Returns item ids and item names. Use the chosen type name, subtype name, and item name when updating the ticket.")
 async def get_board_items(
     board_id: int,
     type_id: int,
@@ -265,6 +265,48 @@ async def get_board_items(
         "count": len(items),
         "data": [_board_type_summary(item) for item in items],
     }, items, include_raw=include_raw)
+
+
+@mcp.tool(description="Small-model helper for ticket classification. Use this when you have ticket_id and board_id from a webhook. Call order: 1) board_id only returns types. 2) add type_id to return subtypes for that type. 3) add subtype_id to return items for that subtype. Do not choose subtype before type. Do not choose item before subtype.")
+async def get_ticket_type_hierarchy(
+    board_id: int,
+    type_id: int | None = None,
+    subtype_id: int | None = None,
+    include_raw: bool = False,
+) -> dict[str, Any]:
+    """Fetch only type/subtype/item lookup data for ticket classification.
+
+    This is narrower than get_board_lookup. It does not fetch statuses or teams.
+    It is intended for LLM or n8n workflows that classify a ticket from a known board id.
+    """
+
+    client = ConnectWiseClient()
+    raw_payload: dict[str, Any] = {}
+    result: dict[str, Any] = {
+        "ok": True,
+        "boardId": board_id,
+        "nextStep": "choose type_id, then call again with board_id and type_id",
+    }
+
+    types = await client.get_board_types(board_id)
+    raw_payload["types"] = types
+    result["types"] = [_board_type_summary(board_type) for board_type in types]
+
+    if type_id is not None:
+        subtypes = await client.get_board_subtypes(board_id, type_id)
+        raw_payload["subtypes"] = subtypes
+        result["typeId"] = type_id
+        result["subtypes"] = [_board_type_summary(subtype) for subtype in subtypes]
+        result["nextStep"] = "choose subtype_id, then call again with board_id, type_id, and subtype_id"
+
+        if subtype_id is not None:
+            items = await client.get_board_items(board_id, type_id, subtype_id)
+            raw_payload["items"] = items
+            result["subtypeId"] = subtype_id
+            result["items"] = [_board_type_summary(item) for item in items]
+            result["nextStep"] = "choose type name, subtype name, and item name, then call update_ticket_type_hierarchy_fast"
+
+    return _with_optional_raw(result, raw_payload, include_raw=include_raw)
 
 
 @mcp.tool(description="Search ConnectWise members before ownership or time-entry workflows. Use this to find the exact member_identifier string required by add_ticket_time_entry. Do not pass the numeric member id to add_ticket_time_entry.")
