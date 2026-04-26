@@ -574,13 +574,21 @@ def test_update_ticket_classifications_rejects_priority_name_and_id() -> None:
         asyncio.run(client.update_ticket_classifications(12345, priority="Priority 4 - Low", priority_id=7))
 
 
-async def test_update_ticket_details_patches_summary_and_initial_description(
+async def test_update_ticket_details_patches_summary_and_initial_description_note(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls = install_fake_async_client(
-        monkeypatch,
-        lambda method, url, **kwargs: FakeResponse(200, json_data={"id": 12345}),
-    )
+    def handler(method: str, url: str, **kwargs: Any) -> FakeResponse:
+        if method == "GET" and url.endswith("/service/tickets/12345/notes"):
+            return FakeResponse(
+                200,
+                json_data=[
+                    {"id": 1, "text": "first internal", "detailDescriptionFlag": False},
+                    {"id": 2, "text": "old description", "detailDescriptionFlag": True},
+                ],
+            )
+        return FakeResponse(200, json_data={"id": 12345})
+
+    calls = install_fake_async_client(monkeypatch, handler)
 
     client = ConnectWiseClient()
     await client.update_ticket_details(
@@ -591,12 +599,13 @@ async def test_update_ticket_details_patches_summary_and_initial_description(
 
     assert calls[0]["method"] == "PATCH"
     assert calls[0]["url"].endswith("/service/tickets/12345")
-    assert {"op": "replace", "path": "summary", "value": "Updated subject"} in calls[0]["json"]
-    assert {
-        "op": "replace",
-        "path": "initialDescription",
-        "value": "Updated initial description",
-    } in calls[0]["json"]
+    assert calls[0]["json"] == [{"op": "replace", "path": "summary", "value": "Updated subject"}]
+    assert calls[1]["method"] == "GET"
+    assert calls[1]["url"].endswith("/service/tickets/12345/notes")
+    assert calls[1]["params"]["orderBy"] == "dateCreated asc"
+    assert calls[2]["method"] == "PATCH"
+    assert calls[2]["url"].endswith("/service/tickets/12345/notes/2")
+    assert calls[2]["json"] == [{"op": "replace", "path": "text", "value": "Updated initial description"}]
 
 
 async def test_update_ticket_details_requires_a_field() -> None:
@@ -604,3 +613,31 @@ async def test_update_ticket_details_requires_a_field() -> None:
 
     with pytest.raises(ConnectWiseError, match="No ticket detail fields"):
         await client.update_ticket_details(12345)
+
+
+async def test_update_ticket_details_creates_initial_description_note_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(method: str, url: str, **kwargs: Any) -> FakeResponse:
+        if method == "GET" and url.endswith("/service/tickets/12345/notes"):
+            return FakeResponse(200, json_data=[])
+        if method == "POST" and url.endswith("/service/tickets/12345/notes"):
+            return FakeResponse(201, json_data={"id": 9, **kwargs["json"]})
+        return FakeResponse(200, json_data={"id": 12345})
+
+    calls = install_fake_async_client(monkeypatch, handler)
+
+    client = ConnectWiseClient()
+    await client.update_ticket_details(12345, initial_description="New initial description")
+
+    assert calls[0]["method"] == "GET"
+    assert calls[0]["url"].endswith("/service/tickets/12345/notes")
+    assert calls[0]["params"]["orderBy"] == "dateCreated asc"
+    assert calls[1]["method"] == "POST"
+    assert calls[1]["url"].endswith("/service/tickets/12345/notes")
+    assert calls[1]["json"] == {
+        "text": "New initial description",
+        "detailDescriptionFlag": True,
+        "internalAnalysisFlag": False,
+        "resolutionFlag": False,
+    }

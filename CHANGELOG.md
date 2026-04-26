@@ -29,6 +29,7 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
+- Changed `update_ticket_details(initial_description=...)` to update the oldest detail-description note, or create the first detail note if none exists, matching ConnectWise initial-description behavior.
 - Fixed fast ticket updates for impact/severity primitive values and added `priority_id` for reliable priority updates.
 - GitHub Actions Docker actions updated to newer Node 24-compatible releases.
 - Release workflow now publishes `latest`; default-branch builds publish `main` and `sha-*` only.
