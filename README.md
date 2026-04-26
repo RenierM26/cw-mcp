@@ -267,6 +267,7 @@ connectwise-manage-mcp/
 - Security workflow: `.github/workflows/security.yml`
 - Release workflow: `.github/workflows/release.yml`
 - Security policy: `SECURITY.md`
+- Changelog: `CHANGELOG.md`
 
 ## Quick start
 
