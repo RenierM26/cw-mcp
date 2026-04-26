@@ -405,18 +405,17 @@ async def test_upsert_managed_internal_note_creates_when_missing(fake_client: Fa
     result = await tickets_module.upsert_managed_internal_note(
         12345,
         "Ticket summary content",
-        note_key="ticket-summary",
     )
 
     assert result["action"] == "created"
     assert result["apiMemberId"] == 192
     assert fake_client.notes[0]["internalAnalysisFlag"] is True
-    assert fake_client.notes[0]["text"].startswith("[cw-mcp-managed-note:ticket-summary]")
+    assert fake_client.notes[0]["text"].startswith("[cw-mcp-managed-note:llm-ticket-summary]")
     assert "Ticket summary content" in fake_client.notes[0]["text"]
 
 
 async def test_upsert_managed_internal_note_updates_one_and_deletes_duplicates(fake_client: FakeClient) -> None:
-    marker = "[cw-mcp-managed-note:ticket-summary]"
+    marker = "[cw-mcp-managed-note:llm-ticket-summary]"
     fake_client.notes = [
         {"id": 1, "text": f"{marker}\n\nOld", "internalAnalysisFlag": True, "member": {"id": 192}},
         {"id": 2, "text": f"{marker}\n\nOld duplicate", "internalAnalysisFlag": True, "member": {"id": 192}},
@@ -426,7 +425,6 @@ async def test_upsert_managed_internal_note_updates_one_and_deletes_duplicates(f
     result = await tickets_module.upsert_managed_internal_note(
         12345,
         "New content",
-        note_key="ticket-summary",
     )
 
     assert result["action"] == "updated"
@@ -437,7 +435,7 @@ async def test_upsert_managed_internal_note_updates_one_and_deletes_duplicates(f
     assert fake_client.updated_note == {
         "ticket_id": 12345,
         "note_id": 1,
-        "text": "[cw-mcp-managed-note:ticket-summary]\n\nNew content",
+        "text": "[cw-mcp-managed-note:llm-ticket-summary]\n\nNew content",
         "internal": True,
     }
     assert {note["id"] for note in fake_client.notes} == {1, 3}
@@ -452,9 +450,8 @@ async def test_upsert_managed_internal_note_coalesces_exact_duplicate_content(fa
     result = await tickets_module.upsert_managed_internal_note(
         12345,
         "Same summary",
-        note_key="ticket-summary",
     )
 
     assert result["action"] == "updated"
     assert result["deletedDuplicateNoteIds"] == [2]
-    assert fake_client.notes[0]["text"] == "[cw-mcp-managed-note:ticket-summary]\n\nSame summary"
+    assert fake_client.notes[0]["text"] == "[cw-mcp-managed-note:llm-ticket-summary]\n\nSame summary"

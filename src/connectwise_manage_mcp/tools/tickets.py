@@ -626,11 +626,13 @@ async def add_ticket_note(ticket_id: int, text: str, internal: bool = True) -> d
     return {"ok": True, "data": result, "ticketId": ticket_id, "internal": internal}
 
 
-@mcp.tool(description="Create or update one managed internal note on a ConnectWise ticket, using note_key as the stable workflow key. This is for LLM/workflow summaries that may run repeatedly on ticket updates. It updates the existing managed note from the same API member, deletes duplicate managed internal notes from that member, or creates a new internal note if none exists. The stored note includes a small [cw-mcp-managed-note:<note_key>] marker so future runs update instead of duplicating.")
+MANAGED_INTERNAL_NOTE_KEY = "llm-ticket-summary"
+
+
+@mcp.tool(description="Create or update the one workflow-managed internal note on a ConnectWise ticket. Use this instead of add_ticket_note for LLM/workflow summaries that may run repeatedly on ticket updates. The stable note key is fixed by the server so LLM runs cannot accidentally create new managed notes by inventing different keys. The tool updates the existing managed note from the same API member, deletes duplicate managed internal notes from that member, or creates a new internal note if none exists.")
 async def upsert_managed_internal_note(
     ticket_id: int,
     content: str,
-    note_key: str = "llm-ticket-summary",
 ) -> dict[str, Any]:
     """Idempotently create/update a workflow-managed internal note.
 
@@ -640,6 +642,7 @@ async def upsert_managed_internal_note(
     exact duplicate internal notes with the same content are also coalesced.
     """
 
+    note_key = MANAGED_INTERNAL_NOTE_KEY
     client = ConnectWiseClient()
     marker = _managed_note_marker(note_key)
     desired_text = _managed_note_text(note_key, content)
