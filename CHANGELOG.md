@@ -28,6 +28,7 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
+- Fixed fast ticket updates for impact/severity primitive values and added `priority_id` for reliable priority updates.
 - GitHub Actions Docker actions updated to newer Node 24-compatible releases.
 - Release workflow now publishes `latest`; default-branch builds publish `main` and `sha-*` only.
 - Release workflow now renders GitHub release notes from `CHANGELOG.md`.
