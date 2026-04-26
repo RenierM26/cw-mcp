@@ -72,14 +72,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Render release notes
+        run: |
+          python scripts/render-release-notes.py             "${{ steps.version.outputs.version }}"             --image "ghcr.io/${{ github.repository_owner }}/connectwise-manage-mcp:${{ steps.version.outputs.version }}"
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.version }}
+          body_path: release-notes.md
           generate_release_notes: true
-          body: |
-            Container image:
-
-            ```text
-            ghcr.io/${{ github.repository_owner }}/connectwise-manage-mcp:${{ steps.version.outputs.version }}
-            ```
