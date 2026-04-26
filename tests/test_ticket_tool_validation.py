@@ -220,6 +220,7 @@ async def test_update_ticket_classifications_fast_skips_preflight_reads(
         "ticket_id": 12345,
         "status": "In Progress",
         "priority": None,
+        "priority_id": None,
         "board": None,
         "board_id": 12,
         "type_name": "Incident",

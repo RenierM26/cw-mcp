@@ -578,11 +578,12 @@ async def get_ticket_time_entries(
     }, entries, include_raw=include_raw)
 
 
-@mcp.tool(description="Update ticket classification fields like status, priority, board, type, subtype, item, team, severity, impact, or source. Expects status, type_name, sub_type_name, item_name, team, severity, impact, and source as names. Board can be supplied as either exact board name via board or numeric board_id. Important hierarchy rule: item_name depends on sub_type_name, and sub_type_name depends on type_name. Recommended sequence: get_ticket, then get_board_lookup so the chosen values match the board hierarchy before calling this tool.")
+@mcp.tool(description="Update ticket classification fields like status, priority, priority_id, board, type, subtype, item, team, severity, impact, or source. Expects status, type_name, sub_type_name, item_name, team, severity, impact, and source as names. Board can be supplied as either exact board name via board or numeric board_id. Important hierarchy rule: item_name depends on sub_type_name, and sub_type_name depends on type_name. Recommended sequence: get_ticket, then get_board_lookup so the chosen values match the board hierarchy before calling this tool.")
 async def update_ticket_classifications(
     ticket_id: int,
     status: str | None = None,
     priority: str | None = None,
+    priority_id: int | None = None,
     board: str | None = None,
     board_id: int | None = None,
     type_name: str | None = None,
@@ -629,6 +630,7 @@ async def update_ticket_classifications(
         ticket_id,
         status=status,
         priority=priority,
+        priority_id=priority_id,
         board=board,
         board_id=board_id,
         type_name=type_name,
@@ -645,6 +647,7 @@ async def update_ticket_classifications(
         "updated": {
             "status": status,
             "priority": priority,
+            "priorityId": priority_id,
             "board": board,
             "boardId": board_id,
             "type": type_name,
@@ -659,11 +662,12 @@ async def update_ticket_classifications(
     }
 
 
-@mcp.tool(description="Fast automation path for high-volume n8n-style ticket updates. Patches known classification values directly without get_ticket or lookup validation, so it usually makes exactly one ConnectWise PATCH call. Use only when workflow data already contains valid board/status/type/subtype/item/team/priority/severity/impact/source values. Board can be supplied as exact board name via board or numeric board_id. If validate=true, use update_ticket_classifications instead.")
+@mcp.tool(description="Fast automation path for high-volume n8n-style ticket updates. Patches known classification values directly without get_ticket or lookup validation, so it usually makes exactly one ConnectWise PATCH call. Use only when workflow data already contains valid board/status/type/subtype/item/team/priority_id/severity/impact/source values. Board can be supplied as exact board name via board or numeric board_id. If validate=true, use update_ticket_classifications instead.")
 async def update_ticket_classifications_fast(
     ticket_id: int,
     status: str | None = None,
     priority: str | None = None,
+    priority_id: int | None = None,
     board: str | None = None,
     board_id: int | None = None,
     type_name: str | None = None,
@@ -691,6 +695,7 @@ async def update_ticket_classifications_fast(
         ticket_id,
         status=status,
         priority=priority,
+        priority_id=priority_id,
         board=board,
         board_id=board_id,
         type_name=type_name,
@@ -708,6 +713,7 @@ async def update_ticket_classifications_fast(
         "updated": {
             "status": status,
             "priority": priority,
+            "priorityId": priority_id,
             "board": board,
             "boardId": board_id,
             "type": type_name,

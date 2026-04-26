@@ -542,3 +542,33 @@ def test_update_ticket_classifications_rejects_board_name_and_id() -> None:
         import asyncio
 
         asyncio.run(client.update_ticket_classifications(12345, board="Service Desk", board_id=12))
+
+
+async def test_update_ticket_classifications_uses_priority_id_and_primitive_impact_severity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data={"id": 12345}),
+    )
+
+    client = ConnectWiseClient()
+    await client.update_ticket_classifications(
+        12345,
+        priority_id=7,
+        severity="Low",
+        impact="Low",
+    )
+
+    assert {"op": "replace", "path": "priority", "value": {"id": 7}} in calls[0]["json"]
+    assert {"op": "replace", "path": "severity", "value": "Low"} in calls[0]["json"]
+    assert {"op": "replace", "path": "impact", "value": "Low"} in calls[0]["json"]
+
+
+def test_update_ticket_classifications_rejects_priority_name_and_id() -> None:
+    client = ConnectWiseClient()
+
+    with pytest.raises(ConnectWiseError, match="Provide either priority or priority_id, not both"):
+        import asyncio
+
+        asyncio.run(client.update_ticket_classifications(12345, priority="Priority 4 - Low", priority_id=7))

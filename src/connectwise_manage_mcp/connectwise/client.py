@@ -313,6 +313,7 @@ class ConnectWiseClient:
         *,
         status: str | None = None,
         priority: str | None = None,
+        priority_id: int | None = None,
         board: str | None = None,
         board_id: int | None = None,
         type_name: str | None = None,
@@ -329,6 +330,7 @@ class ConnectWiseClient:
             ticket_id: Numeric ticket id to update.
             status: Optional status name.
             priority: Optional priority name.
+            priority_id: Optional numeric priority id. Prefer this for reliable automation updates.
             board: Optional board name.
             board_id: Optional numeric board id.
             type_name: Optional ticket type name.
@@ -348,6 +350,8 @@ class ConnectWiseClient:
 
         if board and board_id is not None:
             raise ConnectWiseError("Provide either board or board_id, not both.")
+        if priority and priority_id is not None:
+            raise ConnectWiseError("Provide either priority or priority_id, not both.")
 
         patches: list[dict[str, Any]] = []
 
@@ -360,6 +364,8 @@ class ConnectWiseClient:
             add_replace("status", {"name": status})
         if priority:
             add_replace("priority", {"name": priority})
+        if priority_id is not None:
+            add_replace("priority", {"id": priority_id})
         if board:
             add_replace("board", {"name": board})
         if board_id is not None:
@@ -373,9 +379,9 @@ class ConnectWiseClient:
         if team:
             add_replace("team", {"name": team})
         if severity:
-            add_replace("severity", {"name": severity})
+            add_replace("severity", severity)
         if impact:
-            add_replace("impact", {"name": impact})
+            add_replace("impact", impact)
         if source:
             add_replace("source", {"name": source})
 
