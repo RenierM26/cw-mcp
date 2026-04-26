@@ -466,6 +466,104 @@ class ConnectWiseClient:
         }
         return await self._request("GET", f"/service/tickets/{ticket_id}/notes", params=params)
 
+
+    async def get_ticket_schedule_entries(
+        self,
+        ticket_id: int,
+        *,
+        page: int = 1,
+        page_size: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return schedule entries linked to a service ticket."""
+
+        params = {
+            "page": page,
+            "pageSize": self._bounded_page_size(page_size),
+        }
+        return await self._request("GET", f"/service/tickets/{ticket_id}/scheduleentries", params=params)
+
+    async def add_ticket_schedule_entry(
+        self,
+        *,
+        ticket_id: int,
+        member_identifier: str,
+        date_start: str | None = None,
+        date_end: str | None = None,
+        hours: float | None = None,
+        name: str | None = None,
+        done: bool = False,
+        acknowledged: bool = False,
+        owner: bool = False,
+        allow_schedule_conflicts: bool = False,
+    ) -> dict[str, Any]:
+        """Create a schedule entry/resource assignment for a service ticket."""
+
+        payload: dict[str, Any] = {
+            "objectId": ticket_id,
+            "type": {"id": 4},
+            "member": {"identifier": member_identifier},
+            "doneFlag": done,
+            "acknowledgedFlag": acknowledged,
+            "ownerFlag": owner,
+        }
+        if name:
+            payload["name"] = name
+        if date_start:
+            payload["dateStart"] = date_start
+        if date_end:
+            payload["dateEnd"] = date_end
+        if hours is not None:
+            payload["hours"] = hours
+        if allow_schedule_conflicts:
+            payload["allowScheduleConflictsFlag"] = True
+
+        return await self._request("POST", "/schedule/entries", json=payload)
+
+    async def update_schedule_entry(
+        self,
+        schedule_entry_id: int,
+        *,
+        member_identifier: str | None = None,
+        date_start: str | None = None,
+        date_end: str | None = None,
+        hours: float | None = None,
+        name: str | None = None,
+        done: bool | None = None,
+        acknowledged: bool | None = None,
+        owner: bool | None = None,
+        allow_schedule_conflicts: bool | None = None,
+    ) -> dict[str, Any]:
+        """Patch an existing schedule entry/resource assignment."""
+
+        patches: list[dict[str, Any]] = []
+
+        def replace(path: str, value: Any) -> None:
+            patches.append({"op": "replace", "path": path, "value": value})
+
+        if member_identifier is not None:
+            replace("member", {"identifier": member_identifier})
+        if date_start is not None:
+            replace("dateStart", date_start)
+        if date_end is not None:
+            replace("dateEnd", date_end)
+        if hours is not None:
+            replace("hours", hours)
+        if name is not None:
+            replace("name", name)
+        if done is not None:
+            replace("doneFlag", done)
+        if acknowledged is not None:
+            replace("acknowledgedFlag", acknowledged)
+        if owner is not None:
+            replace("ownerFlag", owner)
+        if allow_schedule_conflicts is not None:
+            replace("allowScheduleConflictsFlag", allow_schedule_conflicts)
+
+        if not patches:
+            raise ConnectWiseError("No schedule entry fields were provided to update.")
+
+        return await self._request("PATCH", f"/schedule/entries/{schedule_entry_id}", json=patches)
+
     async def get_ticket_time_entries(
         self,
         ticket_id: int,

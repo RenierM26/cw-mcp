@@ -78,6 +78,30 @@ def _time_entry_summary(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _schedule_entry_summary(entry: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a raw schedule entry into a compact summary."""
+
+    member = entry.get("member") or {}
+    schedule_type = entry.get("type") or {}
+    status = entry.get("status") or {}
+    return {
+        "id": entry.get("id"),
+        "ticketId": entry.get("objectId"),
+        "name": entry.get("name"),
+        "member": member.get("identifier") or member.get("name"),
+        "memberId": member.get("id"),
+        "type": schedule_type.get("name") or schedule_type.get("id"),
+        "dateStart": entry.get("dateStart"),
+        "dateEnd": entry.get("dateEnd"),
+        "hours": entry.get("hours"),
+        "done": entry.get("doneFlag"),
+        "acknowledged": entry.get("acknowledgedFlag"),
+        "owner": entry.get("ownerFlag"),
+        "status": status.get("name"),
+        "closeDate": entry.get("closeDate"),
+    }
+
+
 def _sla_risk_summary(ticket: dict[str, Any]) -> dict[str, Any]:
     """Normalize a slim SLA-risk ticket record into a compact result shape."""
 
@@ -136,6 +160,19 @@ def _parse_iso_timestamp(value: str, field_name: str) -> None:
         raise ConnectWiseError(
             f"{field_name} must be an ISO-8601 timestamp, for example 2026-04-20T15:30:00Z."
         ) from exc
+
+
+async def _validate_member_identifier(client: ConnectWiseClient, member_identifier: str) -> None:
+    """Ensure a ConnectWise member identifier exists before assignment-style writes."""
+
+    members = await client.search_members(identifier=member_identifier, inactive=False, page_size=100)
+    member = _find_by_name(members, member_identifier, field="identifier")
+    if member is None:
+        valid_names = _sorted_present_strings(members, field="identifier")
+        suggestion = f" Nearby matches: {', '.join(valid_names)}" if valid_names else ""
+        raise ConnectWiseError(
+            f"Unknown member_identifier '{member_identifier}'. Call search_members first and use the exact identifier.{suggestion}"
+        )
 
 
 async def _resolve_board(client: ConnectWiseClient, board_name: str) -> dict[str, Any]:
@@ -286,14 +323,7 @@ async def _validate_time_entry_inputs(
     if time_end:
         _parse_iso_timestamp(time_end, "time_end")
 
-    members = await client.search_members(identifier=member_identifier, inactive=False, page_size=100)
-    member = _find_by_name(members, member_identifier, field="identifier")
-    if member is None:
-        valid_names = _sorted_present_strings(members, field="identifier")
-        suggestion = f" Nearby matches: {', '.join(valid_names)}" if valid_names else ""
-        raise ConnectWiseError(
-            f"Unknown member_identifier '{member_identifier}'. Call search_members first and use the exact identifier.{suggestion}"
-        )
+    await _validate_member_identifier(client, member_identifier)
 
     if location_id is not None:
         locations = await client.list_locations(inactive=False, page_size=100)
@@ -788,6 +818,106 @@ async def update_ticket_type_hierarchy_fast(
         },
         "data": result,
     }
+
+
+@mcp.tool(description="Get schedule entries/resources assigned to a ConnectWise service ticket. Use this before rescheduling a resource or marking a scheduled resource done. Returns schedule_entry_id values needed by update_ticket_schedule_entry and mark_ticket_schedule_entry_done.")
+async def get_ticket_schedule_entries(
+    ticket_id: int,
+    page: int = 1,
+    page_size: int = 50,
+    include_raw: bool = False,
+) -> dict[str, Any]:
+    """Return schedule entries linked to a ticket."""
+
+    client = ConnectWiseClient()
+    entries = await client.get_ticket_schedule_entries(ticket_id, page=page, page_size=page_size)
+    return _with_optional_raw({
+        "ok": True,
+        "count": len(entries),
+        "data": [_schedule_entry_summary(entry) for entry in entries],
+    }, entries, include_raw=include_raw)
+
+
+@mcp.tool(description="Add/schedule a resource on a ConnectWise service ticket. Creates a Schedule entry linked to the ticket using member_identifier, optional date_start/date_end ISO timestamps, optional hours, and optional conflict override. Use search_members first if the exact member_identifier is unknown.")
+async def add_ticket_schedule_entry(
+    ticket_id: int,
+    member_identifier: str,
+    date_start: str | None = None,
+    date_end: str | None = None,
+    hours: float | None = None,
+    name: str | None = None,
+    done: bool = False,
+    acknowledged: bool = False,
+    owner: bool = False,
+    allow_schedule_conflicts: bool = False,
+) -> dict[str, Any]:
+    """Create a ticket schedule entry/resource assignment."""
+
+    if date_start:
+        _parse_iso_timestamp(date_start, "date_start")
+    if date_end:
+        _parse_iso_timestamp(date_end, "date_end")
+    client = ConnectWiseClient()
+    await _validate_member_identifier(client, member_identifier)
+    entry = await client.add_ticket_schedule_entry(
+        ticket_id=ticket_id,
+        member_identifier=member_identifier,
+        date_start=date_start,
+        date_end=date_end,
+        hours=hours,
+        name=name,
+        done=done,
+        acknowledged=acknowledged,
+        owner=owner,
+        allow_schedule_conflicts=allow_schedule_conflicts,
+    )
+    return {"ok": True, "ticketId": ticket_id, "data": entry, "summary": _schedule_entry_summary(entry)}
+
+
+@mcp.tool(description="Reschedule or edit an existing ConnectWise schedule entry/resource assignment. Use get_ticket_schedule_entries first to find schedule_entry_id. Any omitted field is left unchanged; date_start/date_end are ISO timestamps.")
+async def update_ticket_schedule_entry(
+    schedule_entry_id: int,
+    member_identifier: str | None = None,
+    date_start: str | None = None,
+    date_end: str | None = None,
+    hours: float | None = None,
+    name: str | None = None,
+    done: bool | None = None,
+    acknowledged: bool | None = None,
+    owner: bool | None = None,
+    allow_schedule_conflicts: bool | None = None,
+) -> dict[str, Any]:
+    """Patch an existing schedule entry."""
+
+    if date_start:
+        _parse_iso_timestamp(date_start, "date_start")
+    if date_end:
+        _parse_iso_timestamp(date_end, "date_end")
+    client = ConnectWiseClient()
+    if member_identifier:
+        await _validate_member_identifier(client, member_identifier)
+    entry = await client.update_schedule_entry(
+        schedule_entry_id,
+        member_identifier=member_identifier,
+        date_start=date_start,
+        date_end=date_end,
+        hours=hours,
+        name=name,
+        done=done,
+        acknowledged=acknowledged,
+        owner=owner,
+        allow_schedule_conflicts=allow_schedule_conflicts,
+    )
+    return {"ok": True, "scheduleEntryId": schedule_entry_id, "data": entry, "summary": _schedule_entry_summary(entry)}
+
+
+@mcp.tool(description="Mark a scheduled ConnectWise ticket resource as done or not done. Use get_ticket_schedule_entries first to find schedule_entry_id. This patches doneFlag only.")
+async def mark_ticket_schedule_entry_done(schedule_entry_id: int, done: bool = True) -> dict[str, Any]:
+    """Patch only the schedule entry done flag."""
+
+    client = ConnectWiseClient()
+    entry = await client.update_schedule_entry(schedule_entry_id, done=done)
+    return {"ok": True, "scheduleEntryId": schedule_entry_id, "done": done, "data": entry, "summary": _schedule_entry_summary(entry)}
 
 
 @mcp.tool(description="Add a time entry against a ConnectWise service ticket. Expects member_identifier as the exact ConnectWise member identifier string, not the numeric member id. work_type and work_role are exact names, not ids. location_id is an optional numeric location id. Recommended sequence: search_members, optional list_locations, list_work_types, list_work_roles, then add_ticket_time_entry. If time entry creation fails because of location restrictions, call list_locations and retry with an allowed location_id.")

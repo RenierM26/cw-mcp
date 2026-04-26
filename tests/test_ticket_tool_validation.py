@@ -13,6 +13,8 @@ class FakeClient:
         self.updated_status: tuple[int, str] | None = None
         self.updated_classifications: dict[str, Any] | None = None
         self.added_time_entry: dict[str, Any] | None = None
+        self.added_schedule_entry: dict[str, Any] | None = None
+        self.updated_schedule_entry: dict[str, Any] | None = None
 
     async def get_ticket(self, ticket_id: int) -> dict[str, Any]:
         return {
@@ -79,6 +81,25 @@ class FakeClient:
             "notes": kwargs.get("notes"),
             "internalNotes": kwargs.get("internal_notes"),
         }
+
+    async def get_ticket_schedule_entries(self, ticket_id: int, **kwargs: Any) -> list[dict[str, Any]]:
+        return [{"id": 88, "objectId": ticket_id, "member": {"identifier": "helpdesk1"}, "doneFlag": False}]
+
+    async def add_ticket_schedule_entry(self, **kwargs: Any) -> dict[str, Any]:
+        self.added_schedule_entry = kwargs
+        return {
+            "id": 88,
+            "objectId": kwargs["ticket_id"],
+            "member": {"identifier": kwargs["member_identifier"]},
+            "dateStart": kwargs.get("date_start"),
+            "dateEnd": kwargs.get("date_end"),
+            "hours": kwargs.get("hours"),
+            "doneFlag": kwargs.get("done"),
+        }
+
+    async def update_schedule_entry(self, schedule_entry_id: int, **kwargs: Any) -> dict[str, Any]:
+        self.updated_schedule_entry = {"schedule_entry_id": schedule_entry_id, **kwargs}
+        return {"id": schedule_entry_id, "doneFlag": kwargs.get("done")}
 
 
 @pytest.fixture
@@ -281,3 +302,68 @@ async def test_update_ticket_details_tool_updates_summary(fake_client: FakeClien
     assert result["ok"] is True
     assert result["ticketId"] == 12345
     assert result["updated"]["summary"] == "Updated subject"
+
+
+async def test_add_ticket_schedule_entry_validates_member_and_timestamp(fake_client: FakeClient) -> None:
+    result = await tickets_module.add_ticket_schedule_entry(
+        12345,
+        member_identifier="helpdesk1",
+        date_start="2026-04-28T10:00:00Z",
+        date_end="2026-04-28T10:30:00Z",
+        hours=0.5,
+        allow_schedule_conflicts=True,
+    )
+
+    assert result["ok"] is True
+    assert result["summary"]["id"] == 88
+    assert fake_client.added_schedule_entry == {
+        "ticket_id": 12345,
+        "member_identifier": "helpdesk1",
+        "date_start": "2026-04-28T10:00:00Z",
+        "date_end": "2026-04-28T10:30:00Z",
+        "hours": 0.5,
+        "name": None,
+        "done": False,
+        "acknowledged": False,
+        "owner": False,
+        "allow_schedule_conflicts": True,
+    }
+
+
+async def test_add_ticket_schedule_entry_rejects_invalid_timestamp(fake_client: FakeClient) -> None:
+    with pytest.raises(ConnectWiseError, match="date_start must be an ISO-8601 timestamp"):
+        await tickets_module.add_ticket_schedule_entry(12345, member_identifier="helpdesk1", date_start="tomorrow")
+
+    assert fake_client.added_schedule_entry is None
+
+
+async def test_mark_ticket_schedule_entry_done_patches_done_flag(fake_client: FakeClient) -> None:
+    result = await tickets_module.mark_ticket_schedule_entry_done(88)
+
+    assert result["ok"] is True
+    assert result["done"] is True
+    assert fake_client.updated_schedule_entry == {"schedule_entry_id": 88, "done": True}
+
+
+async def test_get_ticket_schedule_entries_returns_summaries(fake_client: FakeClient) -> None:
+    result = await tickets_module.get_ticket_schedule_entries(12345)
+
+    assert result["ok"] is True
+    assert result["data"] == [
+        {
+            "id": 88,
+            "ticketId": 12345,
+            "name": None,
+            "member": "helpdesk1",
+            "memberId": None,
+            "type": None,
+            "dateStart": None,
+            "dateEnd": None,
+            "hours": None,
+            "done": False,
+            "acknowledged": None,
+            "owner": None,
+            "status": None,
+            "closeDate": None,
+        }
+    ]

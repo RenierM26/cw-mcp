@@ -641,3 +641,64 @@ async def test_update_ticket_details_creates_initial_description_note_when_missi
         "internalAnalysisFlag": False,
         "resolutionFlag": False,
     }
+
+
+async def test_add_ticket_schedule_entry_builds_service_ticket_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(201, json_data={"id": 88, **kwargs["json"]}),
+    )
+
+    client = ConnectWiseClient()
+    result = await client.add_ticket_schedule_entry(
+        ticket_id=12345,
+        member_identifier="helpdesk1",
+        date_start="2026-04-28T10:00:00Z",
+        date_end="2026-04-28T10:30:00Z",
+        hours=0.5,
+        allow_schedule_conflicts=True,
+    )
+
+    assert calls[0]["method"] == "POST"
+    assert calls[0]["url"].endswith("/schedule/entries")
+    assert calls[0]["json"] == {
+        "objectId": 12345,
+        "type": {"id": 4},
+        "member": {"identifier": "helpdesk1"},
+        "doneFlag": False,
+        "acknowledgedFlag": False,
+        "ownerFlag": False,
+        "dateStart": "2026-04-28T10:00:00Z",
+        "dateEnd": "2026-04-28T10:30:00Z",
+        "hours": 0.5,
+        "allowScheduleConflictsFlag": True,
+    }
+    assert result["id"] == 88
+
+
+async def test_update_schedule_entry_patches_supplied_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data={"id": 88}),
+    )
+
+    client = ConnectWiseClient()
+    await client.update_schedule_entry(88, done=True, date_start="2026-04-28T11:00:00Z")
+
+    assert calls[0]["method"] == "PATCH"
+    assert calls[0]["url"].endswith("/schedule/entries/88")
+    assert calls[0]["json"] == [
+        {"op": "replace", "path": "dateStart", "value": "2026-04-28T11:00:00Z"},
+        {"op": "replace", "path": "doneFlag", "value": True},
+    ]
+
+
+async def test_update_schedule_entry_requires_a_field() -> None:
+    client = ConnectWiseClient()
+
+    with pytest.raises(ConnectWiseError, match="No schedule entry fields"):
+        await client.update_schedule_entry(88)
