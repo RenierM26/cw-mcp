@@ -1,0 +1,38 @@
+name: ghcr-cleanup
+
+on:
+  schedule:
+    - cron: "37 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      keep_versions:
+        description: "Minimum package versions to keep"
+        required: false
+        default: "30"
+      delete_untagged:
+        description: "Delete untagged package versions"
+        required: false
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+
+permissions:
+  packages: write
+
+concurrency:
+  group: ghcr-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Cleanup old GHCR image versions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old untagged/container build versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: connectwise-manage-mcp
+          package-type: container
+          min-versions-to-keep: ${{ inputs.keep_versions || '30' }}
+          delete-only-untagged-versions: ${{ inputs.delete_untagged || 'true' }}
+          ignore-versions: '^(latest|main|v\d+\.\d+\.\d+|sha-[a-f0-9]+)$'

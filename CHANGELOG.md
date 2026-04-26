@@ -24,6 +24,7 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
+- Release workflow now publishes `latest`; default-branch builds publish `main` and `sha-*` only.
 - Release workflow now renders GitHub release notes from `CHANGELOG.md`.
 - Docker and Compose probe guidance now uses `/live` for liveness and `/health` for ConnectWise readiness.
 - Deployment guidance recommends pinned release/SHA image tags instead of relying on `latest`.
