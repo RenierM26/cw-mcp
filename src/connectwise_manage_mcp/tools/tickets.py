@@ -173,6 +173,7 @@ async def _validate_ticket_classifications(
     *,
     ticket: dict[str, Any],
     board: str | None,
+    board_id: int | None,
     status: str | None,
     type_name: str | None,
     sub_type_name: str | None,
@@ -181,23 +182,29 @@ async def _validate_ticket_classifications(
 ) -> None:
     """Preflight board-scoped classification values so write errors stay actionable."""
 
+    if board and board_id is not None:
+        raise ConnectWiseError("Provide either board or board_id, not both.")
+
     current_board = ticket.get("board") or {}
     board_record = (
         await _resolve_board(client, board)
         if board
-        else {"id": current_board.get("id"), "name": current_board.get("name")}
+        else {
+            "id": board_id if board_id is not None else current_board.get("id"),
+            "name": current_board.get("name"),
+        }
     )
-    board_id = board_record.get("id")
-    board_name = board_record.get("name")
-    if board_id is None or not board_name:
+    resolved_board_id = board_record.get("id")
+    board_name = str(board_record.get("name") or f"id {resolved_board_id}")
+    if resolved_board_id is None:
         raise ConnectWiseError(
-            "Could not determine the ticket's board for validation. Call get_ticket first or provide a valid board name."
+            "Could not determine the ticket's board for validation. Call get_ticket first or provide board_id or a valid board name."
         )
 
     if status:
-        await _validate_ticket_status(client, board_id=board_id, board_name=board_name, status=status)
+        await _validate_ticket_status(client, board_id=resolved_board_id, board_name=board_name, status=status)
 
-    teams = await client.get_board_teams(board_id)
+    teams = await client.get_board_teams(resolved_board_id)
     if team and _find_by_name(teams, team) is None:
         valid_names = _sorted_present_strings(teams)
         raise ConnectWiseError(
@@ -211,7 +218,7 @@ async def _validate_ticket_classifications(
     if not any([type_name, sub_type_name, item_name]):
         return
 
-    board_types = await client.get_board_types(board_id)
+    board_types = await client.get_board_types(resolved_board_id)
     type_record = None
     if effective_type_name:
         type_record = _find_by_name(board_types, effective_type_name)
@@ -234,7 +241,7 @@ async def _validate_ticket_classifications(
                 "Could not resolve the ticket type needed to validate sub_type_name. "
                 "Call get_ticket or get_board_lookup first and choose a valid type."
             )
-        subtypes = await client.get_board_subtypes(board_id, type_record["id"])
+        subtypes = await client.get_board_subtypes(resolved_board_id, type_record["id"])
         subtype_record = _find_by_name(subtypes, effective_sub_type_name)
         if subtype_record is None:
             valid_names = _sorted_present_strings(subtypes)
@@ -254,7 +261,7 @@ async def _validate_ticket_classifications(
                 "Could not resolve the ticket type/subtype needed to validate item_name. "
                 "Call get_ticket or get_board_lookup first and choose a valid hierarchy."
             )
-        items = await client.get_board_items(board_id, type_record["id"], subtype_record["id"])
+        items = await client.get_board_items(resolved_board_id, type_record["id"], subtype_record["id"])
         if _find_by_name(items, item_name) is None:
             valid_names = _sorted_present_strings(items)
             raise ConnectWiseError(
@@ -571,12 +578,13 @@ async def get_ticket_time_entries(
     }, entries, include_raw=include_raw)
 
 
-@mcp.tool(description="Update ticket classification fields like status, priority, board, type, subtype, item, team, severity, impact, or source. Expects board, status, type_name, sub_type_name, item_name, team, severity, impact, and source as names, not ids. Important hierarchy rule: item_name depends on sub_type_name, and sub_type_name depends on type_name. Recommended sequence: get_ticket, optional list_boards, then get_board_lookup so the chosen values match the board hierarchy before calling this tool.")
+@mcp.tool(description="Update ticket classification fields like status, priority, board, type, subtype, item, team, severity, impact, or source. Expects status, type_name, sub_type_name, item_name, team, severity, impact, and source as names. Board can be supplied as either exact board name via board or numeric board_id. Important hierarchy rule: item_name depends on sub_type_name, and sub_type_name depends on type_name. Recommended sequence: get_ticket, then get_board_lookup so the chosen values match the board hierarchy before calling this tool.")
 async def update_ticket_classifications(
     ticket_id: int,
     status: str | None = None,
     priority: str | None = None,
     board: str | None = None,
+    board_id: int | None = None,
     type_name: str | None = None,
     sub_type_name: str | None = None,
     item_name: str | None = None,
@@ -591,9 +599,12 @@ async def update_ticket_classifications(
 
     Prerequisites:
         Use ``get_ticket`` to inspect the current classification state.
-        Use ``list_boards`` to find the board id when only the board name is known.
+        Provide either ``board`` as an exact board name or ``board_id`` as the numeric board id
+        when moving a ticket to a different board. Supplying ``board_id`` avoids an extra
+        board-name lookup when the id is already known.
         Use ``get_board_lookup`` to discover valid board-specific status, type, subtype,
-        item, and team names before patching. This tool expects names, not ids. When
+        item, and team names before patching. Classification lookup values other than
+        ``board_id`` are names, not ids. When
         changing hierarchy fields, choose ``type_name`` first, then ``sub_type_name``,
         then ``item_name``. Do not treat ``item_name`` as an independent board-wide value.
 
@@ -607,6 +618,7 @@ async def update_ticket_classifications(
         client,
         ticket=ticket,
         board=board,
+        board_id=board_id,
         status=status,
         type_name=type_name,
         sub_type_name=sub_type_name,
@@ -618,6 +630,7 @@ async def update_ticket_classifications(
         status=status,
         priority=priority,
         board=board,
+        board_id=board_id,
         type_name=type_name,
         sub_type_name=sub_type_name,
         item_name=item_name,
@@ -633,6 +646,7 @@ async def update_ticket_classifications(
             "status": status,
             "priority": priority,
             "board": board,
+            "boardId": board_id,
             "type": type_name,
             "subType": sub_type_name,
             "item": item_name,

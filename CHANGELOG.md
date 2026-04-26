@@ -8,6 +8,7 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ### Added
 
+- `update_ticket_classifications` now accepts numeric `board_id` to move tickets without first resolving the board name.
 - Preflight configuration CLI (`cwmcp-preflight`) for local/deployment validation without calling ConnectWise.
 - CI gates for Ruff, mypy, pytest, Docker image build, and runtime container smoke testing.
 - CodeQL analysis and Trivy container vulnerability scanning.
