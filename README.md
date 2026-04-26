@@ -47,7 +47,8 @@ ghcr.io/renierm26/connectwise-manage-mcp:v0.1.0
 The HTTP transport exposes two important routes:
 
 - `/mcp` — protected by bearer-token middleware when `AUTH_ENABLED=true`
-- `/health` — intentionally unauthenticated for platform probes, but returns only minimal operational status
+- `/live` — unauthenticated liveness check for platform/container probes; does not call ConnectWise
+- `/health` — unauthenticated readiness/upstream check; verifies configuration and ConnectWise reachability, but returns only minimal operational status
 
 Additional controls:
 
@@ -66,7 +67,7 @@ Before promoting a deployment:
 1. Confirm the target commit has green CI and security checks.
 2. Prefer a release tag such as `v0.1.0`, or use the Git SHA image tag.
 3. Update the runtime platform to the selected image tag.
-4. Verify `/health` after deployment.
+4. Verify `/live` after deployment, then `/health` for upstream readiness.
 5. Verify your MCP client can connect to `/mcp` with the bearer token.
 6. Run a safe read-only tool first, for example `list_boards` or `search_members`.
 
@@ -258,7 +259,8 @@ connectwise-manage-mcp/
 ## Operations quick links
 
 - Local HTTP endpoint: `http://localhost:8000/mcp`
-- Health endpoint: `http://localhost:8000/health`
+- Liveness endpoint: `http://localhost:8000/live`
+- Readiness/upstream health endpoint: `http://localhost:8000/health`
 - Compose example: `compose.example.yml`
 - Runtime smoke test: `scripts/runtime-smoke.sh`
 - CI workflow: `.github/workflows/ci.yml`
@@ -318,14 +320,21 @@ Server endpoint:
 http://localhost:8000/mcp
 ```
 
-Health endpoint:
+Liveness endpoint:
+
+```text
+http://localhost:8000/live
+```
+
+Readiness/upstream health endpoint:
 
 ```text
 http://localhost:8000/health
 ```
 
 Notes:
-- `GET /health` is browser-friendly and returns JSON.
+- `GET /live` is browser-friendly, returns JSON, and does not call ConnectWise.
+- `GET /health` is browser-friendly, returns JSON, and checks configuration plus ConnectWise reachability.
 - `/health` is intentionally minimal and does not echo raw ConnectWise tenant or licensing details.
 - `GET /mcp` is not a normal human web page. A plain browser request can return a protocol-level error like `406 Not Acceptable`, which is expected for FastMCP HTTP transport.
 - When auth is enabled, MCP clients must send `Authorization: Bearer <AUTH_BEARER_TOKEN>` for `/mcp` requests.
@@ -398,8 +407,9 @@ docker build -t connectwise-manage-mcp .
 docker run --rm -p 8000:8000 --env-file .env connectwise-manage-mcp
 ```
 
-Container probes should generally target:
-- `/health` for readiness or liveness style checks
+Container/platform probes should generally target:
+- `/live` for liveness checks that should not depend on ConnectWise availability
+- `/health` for readiness checks that should include configuration and ConnectWise reachability
 - `/mcp` only for actual MCP clients with a bearer token, and from allowed IPs if an allowlist is configured
 
 ## Run in VS Code devcontainer
@@ -414,6 +424,7 @@ After reopening in the devcontainer, useful checks are:
 
 ```bash
 cat /tmp/cwmcp-http.log
+curl http://127.0.0.1:8000/live
 curl http://127.0.0.1:8000/health
 ```
 
@@ -452,9 +463,10 @@ Authorization: Bearer <AUTH_BEARER_TOKEN>
 ```
 
 ### Option 2, plain HTTP helper routes
-If you later add your own custom helper endpoints, n8n can call those with standard HTTP Request nodes. In the current scaffold, the only custom helper route is:
+If you later add your own custom helper endpoints, n8n can call those with standard HTTP Request nodes. In the current scaffold, the custom helper routes are:
 
 ```text
+GET /live
 GET /health
 ```
 

@@ -31,21 +31,16 @@ docker run -d \
 base="http://127.0.0.1:${PORT}"
 
 for _ in $(seq 1 30); do
-  if curl -fsS --max-time 2 "$base/health" >/tmp/cwmcp-health.json 2>/dev/null; then
-    break
-  fi
-  # /health may return 502 with fake upstream credentials once the app is ready.
-  status="$(curl -sS -o /tmp/cwmcp-health.json -w '%{http_code}' --max-time 2 "$base/health" 2>/dev/null || true)"
-  if [ "$status" = "502" ] || [ "$status" = "503" ]; then
+  if curl -fsS --max-time 2 "$base/live" >/tmp/cwmcp-live.json 2>/dev/null; then
     break
   fi
   sleep 1
 done
 
-health_status="$(curl -sS -o /tmp/cwmcp-health.json -w '%{http_code}' --max-time 5 "$base/health")"
-case "$health_status" in
-  200|502|503) ;;
-  *) echo "Expected /health to be reachable, got HTTP $health_status" >&2; cat /tmp/cwmcp-health.json >&2; exit 1 ;;
+live_status="$(curl -sS -o /tmp/cwmcp-live.json -w '%{http_code}' --max-time 5 "$base/live")"
+case "$live_status" in
+  200) ;;
+  *) echo "Expected /live to be reachable, got HTTP $live_status" >&2; cat /tmp/cwmcp-live.json >&2; exit 1 ;;
 esac
 
 unauth_status="$(curl -sS -o /tmp/cwmcp-unauth.json -w '%{http_code}' --max-time 5 "$base/mcp")"

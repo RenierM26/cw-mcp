@@ -84,6 +84,22 @@ def test_mcp_allows_lowercase_bearer_scheme(auth_env: None, monkeypatch: pytest.
 
 
 
+def test_live_is_not_blocked_by_bearer_auth(auth_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CW_CLIENT_ID", raising=False)
+    get_settings.cache_clear()
+
+    with TestClient(create_http_app()) as client:
+        response = client.get("/live")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "configured": False,
+        "authEnabled": True,
+        "ipAllowlistEnabled": False,
+    }
+
+
 def test_health_is_not_blocked_by_bearer_auth(auth_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CW_CLIENT_ID", raising=False)
     get_settings.cache_clear()

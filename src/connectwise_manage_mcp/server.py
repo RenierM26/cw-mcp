@@ -109,6 +109,21 @@ def create_http_app() -> Any:
     return mcp.http_app(path="/mcp", middleware=middleware, transport="http")
 
 
+@mcp.custom_route("/live", methods=["GET"])  # type: ignore[arg-type]
+async def live(_: Any) -> Response:
+    """Report that the HTTP process is alive without checking external dependencies."""
+
+    settings = get_settings()
+    return JSONResponse(
+        {
+            "ok": True,
+            "configured": settings.is_configured,
+            "authEnabled": settings.auth_enabled,
+            "ipAllowlistEnabled": bool(settings.auth_allowed_ips),
+        }
+    )
+
+
 @mcp.custom_route("/health", methods=["GET"])  # type: ignore[arg-type]
 async def health(_: Any) -> Response:
     """Report whether the server is configured and whether ConnectWise is reachable.
