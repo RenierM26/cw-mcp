@@ -54,6 +54,35 @@ def _note_summary(note: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _managed_note_marker(note_key: str) -> str:
+    """Return the stable marker used to find an idempotent managed note."""
+
+    safe_key = note_key.strip()
+    if not safe_key:
+        raise ConnectWiseError("note_key must not be empty.")
+    return f"[cw-mcp-managed-note:{safe_key}]"
+
+
+def _managed_note_text(note_key: str, content: str) -> str:
+    """Prefix managed note content with a stable key marker."""
+
+    return f"{_managed_note_marker(note_key)}\n\n{content}"
+
+
+def _normalize_note_text(value: str | None) -> str:
+    """Normalize note text for duplicate detection."""
+
+    return "\n".join((value or "").strip().splitlines())
+
+
+def _note_member_id(note: dict[str, Any]) -> int | None:
+    """Extract the ConnectWise member id that created a note when available."""
+
+    member = note.get("member") or {}
+    member_id = member.get("id")
+    return member_id if isinstance(member_id, int) else None
+
+
 def _time_entry_summary(entry: dict[str, Any]) -> dict[str, Any]:
     """Normalize a raw time entry into a compact summary."""
 
@@ -595,6 +624,86 @@ async def add_ticket_note(ticket_id: int, text: str, internal: bool = True) -> d
     client = ConnectWiseClient()
     result = await client.add_ticket_note(ticket_id, text=text, internal=internal)
     return {"ok": True, "data": result, "ticketId": ticket_id, "internal": internal}
+
+
+@mcp.tool(description="Create or update one managed internal note on a ConnectWise ticket, using note_key as the stable workflow key. This is for LLM/workflow summaries that may run repeatedly on ticket updates. It updates the existing managed note from the same API member, deletes duplicate managed internal notes from that member, or creates a new internal note if none exists. The stored note includes a small [cw-mcp-managed-note:<note_key>] marker so future runs update instead of duplicating.")
+async def upsert_managed_internal_note(
+    ticket_id: int,
+    content: str,
+    note_key: str = "llm-ticket-summary",
+) -> dict[str, Any]:
+    """Idempotently create/update a workflow-managed internal note.
+
+    This avoids ticket-update loops creating duplicate notes. Matching is scoped to
+    internal notes with the same stable marker, and duplicate cleanup is limited to
+    the ConnectWise member id found on those matching notes. If no marker exists yet,
+    exact duplicate internal notes with the same content are also coalesced.
+    """
+
+    client = ConnectWiseClient()
+    marker = _managed_note_marker(note_key)
+    desired_text = _managed_note_text(note_key, content)
+    desired_plain = _normalize_note_text(content)
+    desired_full = _normalize_note_text(desired_text)
+
+    page_size = getattr(getattr(client, "settings", None), "cw_max_page_size", 100)
+    notes = await client.get_ticket_notes(
+        ticket_id,
+        page=1,
+        page_size=page_size,
+        order_by="dateCreated asc",
+    )
+    internal_notes = [note for note in notes if note.get("internalAnalysisFlag")]
+    marker_matches = [note for note in internal_notes if marker in (note.get("text") or "")]
+    exact_matches = [
+        note
+        for note in internal_notes
+        if _normalize_note_text(note.get("text")) in {desired_plain, desired_full}
+    ]
+    candidates = marker_matches or exact_matches
+
+    if not candidates:
+        created = await client.add_ticket_note(ticket_id, desired_text, internal=True)
+        return {
+            "ok": True,
+            "ticketId": ticket_id,
+            "noteKey": note_key,
+            "action": "created",
+            "noteId": created.get("id"),
+            "apiMemberId": _note_member_id(created),
+            "deletedDuplicateNoteIds": [],
+            "data": created,
+        }
+
+    api_member_id = _note_member_id(candidates[0])
+    if api_member_id is not None:
+        scoped_candidates = [note for note in candidates if _note_member_id(note) == api_member_id]
+    else:
+        scoped_candidates = candidates
+
+    kept = scoped_candidates[0]
+    kept_id = kept.get("id")
+    if not isinstance(kept_id, int):
+        raise ConnectWiseError("Could not determine the managed note id to update.")
+
+    deleted_ids: list[int] = []
+    for duplicate in scoped_candidates[1:]:
+        note_id = duplicate.get("id")
+        if isinstance(note_id, int):
+            await client.delete_ticket_note(ticket_id, note_id)
+            deleted_ids.append(note_id)
+
+    updated = await client.update_ticket_note(ticket_id, kept_id, text=desired_text, internal=True)
+    return {
+        "ok": True,
+        "ticketId": ticket_id,
+        "noteKey": note_key,
+        "action": "updated",
+        "noteId": kept_id,
+        "apiMemberId": api_member_id,
+        "deletedDuplicateNoteIds": deleted_ids,
+        "data": updated,
+    }
 
 
 @mcp.tool(description="Get notes for a ConnectWise service ticket. Use this when you only need notes. If you also need the ticket summary or time entries, prefer get_ticket_bundle to reduce tool hops.")
