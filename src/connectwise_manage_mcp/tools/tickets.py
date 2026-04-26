@@ -509,6 +509,31 @@ async def create_ticket(
     return {"ok": True, "data": ticket, "summary": _ticket_summary(ticket)}
 
 
+@mcp.tool(description="Update basic ticket text fields. Use this to change the ticket subject/summary and/or initial description. Requires ticket_id plus summary and/or initial_description. Makes one PATCH call.")
+async def update_ticket_details(
+    ticket_id: int,
+    summary: str | None = None,
+    initial_description: str | None = None,
+) -> dict[str, Any]:
+    """Patch ticket subject/summary or initial description."""
+
+    client = ConnectWiseClient()
+    result = await client.update_ticket_details(
+        ticket_id,
+        summary=summary,
+        initial_description=initial_description,
+    )
+    return {
+        "ok": True,
+        "ticketId": ticket_id,
+        "updated": {
+            "summary": summary,
+            "initialDescription": initial_description,
+        },
+        "data": result,
+    }
+
+
 @mcp.tool(description="Update only the status of an existing ConnectWise service ticket. Expects status as a board-specific status name, not a status id. Recommended sequence: get_ticket to learn the board, then get_board_statuses or get_board_lookup to choose a valid status name, then call this tool.")
 async def update_ticket_status(ticket_id: int, status: str) -> dict[str, Any]:
     """Update only the ticket status and echo the requested change.

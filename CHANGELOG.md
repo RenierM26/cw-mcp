@@ -8,6 +8,7 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ### Added
 
+- Added `update_ticket_details` to update an existing ticket summary/subject and initial description.
 - Added `get_ticket_type_hierarchy` and simplified classification tool descriptions for smaller-model workflows.
 - Added `update_ticket_type_hierarchy_fast` for n8n workflows that set board/type/subtype/item with one PATCH call.
 - Added `update_ticket_classifications_fast` for high-volume automation flows that already know valid ticket classification values and need to avoid preflight read/lookup calls.
