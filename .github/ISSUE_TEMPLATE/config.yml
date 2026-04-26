@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/RenierM26/cw-mcp/tree/main/docs
+    about: Check deployment and operational documentation first.

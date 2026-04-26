@@ -1,0 +1,55 @@
+name: Bug report
+description: Report a reproducible problem with the MCP server
+title: "Bug: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the tool call, endpoint, or deployment action that triggers it.
+      placeholder: |
+        1. Start server with ...
+        2. Call ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version/image tag/commit
+      placeholder: v0.1.0, sha-..., or commit hash
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport
+      options:
+        - HTTP
+        - stdio
+        - both
+        - unsure
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Redact bearer tokens, ConnectWise keys, tenant-specific secrets, and customer data.
+      render: text
