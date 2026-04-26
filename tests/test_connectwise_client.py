@@ -518,3 +518,27 @@ async def test_request_wraps_non_json_success_responses(monkeypatch: pytest.Monk
         match=r"ConnectWise returned a non-JSON response for GET /system/info\.",
     ):
         await client.healthcheck()
+
+
+async def test_update_ticket_classifications_can_patch_board_by_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data={"id": 12345}),
+    )
+
+    client = ConnectWiseClient()
+    await client.update_ticket_classifications(12345, board_id=12, status="In Progress")
+
+    assert calls[0]["method"] == "PATCH"
+    assert calls[0]["url"].endswith("/service/tickets/12345")
+    assert {"op": "replace", "path": "board", "value": {"id": 12}} in calls[0]["json"]
+    assert {"op": "replace", "path": "status", "value": {"name": "In Progress"}} in calls[0]["json"]
+
+
+def test_update_ticket_classifications_rejects_board_name_and_id() -> None:
+    client = ConnectWiseClient()
+
+    with pytest.raises(ConnectWiseError, match="Provide either board or board_id, not both"):
+        import asyncio
+
+        asyncio.run(client.update_ticket_classifications(12345, board="Service Desk", board_id=12))

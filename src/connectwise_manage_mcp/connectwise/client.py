@@ -314,6 +314,7 @@ class ConnectWiseClient:
         status: str | None = None,
         priority: str | None = None,
         board: str | None = None,
+        board_id: int | None = None,
         type_name: str | None = None,
         sub_type_name: str | None = None,
         item_name: str | None = None,
@@ -329,6 +330,7 @@ class ConnectWiseClient:
             status: Optional status name.
             priority: Optional priority name.
             board: Optional board name.
+            board_id: Optional numeric board id.
             type_name: Optional ticket type name.
             sub_type_name: Optional ticket subtype name.
             item_name: Optional ticket item name.
@@ -344,6 +346,9 @@ class ConnectWiseClient:
             ConnectWiseError: If no fields were supplied.
         """
 
+        if board and board_id is not None:
+            raise ConnectWiseError("Provide either board or board_id, not both.")
+
         patches: list[dict[str, Any]] = []
 
         def add_replace(path: str, value: Any) -> None:
@@ -357,6 +362,8 @@ class ConnectWiseClient:
             add_replace("priority", {"name": priority})
         if board:
             add_replace("board", {"name": board})
+        if board_id is not None:
+            add_replace("board", {"id": board_id})
         if type_name:
             add_replace("type", {"name": type_name})
         if sub_type_name:

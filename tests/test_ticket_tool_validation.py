@@ -158,3 +158,37 @@ async def test_add_ticket_time_entry_rejects_invalid_location_id(fake_client: Fa
         )
 
     assert fake_client.added_time_entry is None
+
+
+async def test_update_ticket_classifications_accepts_board_id_without_board_lookup(
+    fake_client: FakeClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail_list_boards(**kwargs: Any) -> list[dict[str, Any]]:
+        raise AssertionError("list_boards should not be called when board_id is supplied")
+
+    monkeypatch.setattr(fake_client, "list_boards", fail_list_boards)
+
+    result = await tickets_module.update_ticket_classifications(
+        12345,
+        board_id=12,
+        status="In Progress",
+        type_name="Incident",
+        sub_type_name="Remote Access",
+        item_name="VPN",
+    )
+
+    assert result["ok"] is True
+    assert result["updated"]["boardId"] == 12
+    assert fake_client.updated_classifications is not None
+    assert fake_client.updated_classifications["board_id"] == 12
+    assert fake_client.updated_classifications["board"] is None
+
+
+async def test_update_ticket_classifications_rejects_board_and_board_id(
+    fake_client: FakeClient,
+) -> None:
+    with pytest.raises(ConnectWiseError, match="Provide either board or board_id, not both"):
+        await tickets_module.update_ticket_classifications(12345, board="Service Desk", board_id=12)
+
+    assert fake_client.updated_classifications is None
