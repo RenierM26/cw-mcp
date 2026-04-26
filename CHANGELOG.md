@@ -30,6 +30,7 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
+- Fixed `get_ticket_schedule_entries` to read full schedule-entry records from `/schedule/entries` instead of ticket schedule references.
 - Changed `update_ticket_details(initial_description=...)` to update the oldest detail-description note, or create the first detail note if none exists, matching ConnectWise initial-description behavior.
 - Fixed fast ticket updates for impact/severity primitive values and added `priority_id` for reliable priority updates.
 - GitHub Actions Docker actions updated to newer Node 24-compatible releases.
