@@ -7,13 +7,35 @@ name = "connectwise-manage-mcp"
 version = "0.1.0"
 description = "FastMCP wrapper for ConnectWise Manage"
 readme = "README.md"
+license = "GPL-3.0-only"
 requires-python = ">=3.11"
+keywords = ["connectwise", "mcp", "fastmcp", "automation", "tickets"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Web Environment",
+  "Framework :: Pydantic :: 2",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+  "Topic :: Office/Business",
+  "Typing :: Typed",
+]
 dependencies = [
   "fastmcp>=2.0.0",
   "httpx>=0.27.0",
   "pydantic>=2.7.0",
   "uvicorn>=0.30.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/RenierM26/cw-mcp"
+Repository = "https://github.com/RenierM26/cw-mcp"
+Issues = "https://github.com/RenierM26/cw-mcp/issues"
+Documentation = "https://github.com/RenierM26/cw-mcp/tree/main/docs"
 
 [project.optional-dependencies]
 dev = [
