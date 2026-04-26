@@ -1,0 +1,37 @@
+name: Deployment help
+description: Ask for help deploying or operating the container
+title: "Deployment: "
+labels: ["deployment"]
+body:
+  - type: dropdown
+    id: target
+    attributes:
+      label: Deployment target
+      options:
+        - Docker Compose
+        - Azure Container Apps
+        - Other container platform
+        - Local development
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: What are you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant non-secret configuration
+      description: Do not paste secrets. Redact tokens and ConnectWise keys.
+      render: text
+  - type: textarea
+    id: checks
+    attributes:
+      label: Checks already tried
+      description: Mention `/live`, `/health`, container logs, and MCP client behavior if available.
+      placeholder: |
+        - GET /live returned ...
+        - GET /health returned ...
+        - Container logs show ...

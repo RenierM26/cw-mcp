@@ -1,0 +1,39 @@
+name: Security report
+description: Report a suspected vulnerability safely
+title: "Security: "
+labels: ["security"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not include real ConnectWise keys, bearer tokens, customer data, or exploit payloads against live systems.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the suspected issue at a high level.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Authentication / authorization
+        - Container image
+        - Dependency vulnerability
+        - Logging / data exposure
+        - ConnectWise API handling
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Potential impact
+    validations:
+      required: true
+  - type: textarea
+    id: remediation
+    attributes:
+      label: Suggested remediation
