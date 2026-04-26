@@ -267,7 +267,7 @@ async def get_board_items(
     }, items, include_raw=include_raw)
 
 
-@mcp.tool(description="Small-model helper for ticket classification. Use this when you have ticket_id and board_id from a webhook. Call order: 1) board_id only returns types. 2) add type_id to return subtypes for that type. 3) add subtype_id to return items for that subtype. Do not choose subtype before type. Do not choose item before subtype.")
+@mcp.tool(description="Small-model helper for ticket classification. Use this when you already have board_id. Call order: 1) board_id only returns types. 2) add type_id to return subtypes for that type. 3) add subtype_id to return items for that subtype. Do not choose subtype before type. Do not choose item before subtype.")
 async def get_ticket_type_hierarchy(
     board_id: int,
     type_id: int | None = None,
@@ -277,7 +277,7 @@ async def get_ticket_type_hierarchy(
     """Fetch only type/subtype/item lookup data for ticket classification.
 
     This is narrower than get_board_lookup. It does not fetch statuses or teams.
-    It is intended for LLM or n8n workflows that classify a ticket from a known board id.
+    It is intended for LLM or n8n workflows that classify a ticket when the board id is already known.
     """
 
     client = ConnectWiseClient()
