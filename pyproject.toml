@@ -47,6 +47,7 @@ dev = [
 [project.scripts]
 cwmcp-http = "connectwise_manage_mcp.server:run_http"
 cwmcp-stdio = "connectwise_manage_mcp.server:run_stdio"
+cwmcp-preflight = "connectwise_manage_mcp.preflight:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

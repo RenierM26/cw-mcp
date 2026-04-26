@@ -342,6 +342,17 @@ Notes:
 - When auth is enabled, MCP clients must send `Authorization: Bearer <AUTH_BEARER_TOKEN>` for `/mcp` requests.
 - If `AUTH_ALLOWED_IPS` is set, only those source IPs or CIDR ranges can reach `/mcp`.
 
+
+## Preflight configuration check
+
+Validate environment-backed configuration without calling ConnectWise:
+
+```bash
+cwmcp-preflight
+```
+
+The command prints JSON, redacts secret values by reporting only whether each required setting is configured, and exits non-zero when required configuration is missing or invalid.
+
 ## Run in stdio mode
 
 Useful for local MCP testing or editor integrations that prefer stdio transport:
