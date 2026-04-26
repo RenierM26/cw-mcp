@@ -13,6 +13,64 @@ The repository is aimed at two main use cases:
 - an MCP server that AI agents can call over HTTP or stdio
 - a small, readable codebase you can safely adapt for your own ConnectWise tenant
 
+
+## Production deployment at a glance
+
+For production, treat this as a small private API service that happens to speak MCP:
+
+- run the container image from GHCR
+- keep `AUTH_ENABLED=true`
+- use a long random `AUTH_BEARER_TOKEN`
+- store ConnectWise keys and bearer tokens as platform secrets
+- prefer private/internal ingress; if exposed externally, put it behind HTTPS and source restrictions
+- pin deployments to a release tag or SHA tag instead of relying on `latest`
+
+Useful docs:
+
+- [Docker Compose deployment](docs/DOCKER_COMPOSE.md)
+- [Azure Container Apps notes](docs/AZURE_CONTAINER_APPS.md)
+
+Published image:
+
+```text
+ghcr.io/renierm26/connectwise-manage-mcp:latest
+```
+
+For repeatable deployments, prefer a versioned image once releases are cut:
+
+```text
+ghcr.io/renierm26/connectwise-manage-mcp:v0.1.0
+```
+
+## Security model
+
+The HTTP transport exposes two important routes:
+
+- `/mcp` — protected by bearer-token middleware when `AUTH_ENABLED=true`
+- `/health` — intentionally unauthenticated for platform probes, but returns only minimal operational status
+
+Additional controls:
+
+- `AUTH_ALLOWED_IPS` can restrict `/mcp` to specific IPs or CIDR ranges
+- `AUTH_TRUST_X_FORWARDED_FOR=true` can be used behind trusted proxies when enforcing forwarded client IPs
+- the Docker image runs as a non-root user
+- the Compose example uses a read-only filesystem, drops capabilities, and disables privilege escalation
+- CI runs unit tests, type checks, linting, container startup/auth smoke tests, CodeQL, and Trivy scanning
+
+Do not commit `.env` files or real ConnectWise credentials.
+
+## Release and deploy checklist
+
+Before promoting a deployment:
+
+1. Confirm the target commit has green CI and security checks.
+2. Prefer a release tag such as `v0.1.0`, or use the Git SHA image tag.
+3. Update the runtime platform to the selected image tag.
+4. Verify `/health` after deployment.
+5. Verify your MCP client can connect to `/mcp` with the bearer token.
+6. Run a safe read-only tool first, for example `list_boards` or `search_members`.
+
+
 ## Architecture at a glance
 
 The request flow is intentionally simple:
@@ -185,13 +243,27 @@ connectwise-manage-mcp/
 │   ├── config.py
 │   ├── models.py
 │   └── server.py
+├── scripts/
 ├── tests/
+├── .dockerignore
 ├── .env.example
 ├── .env.azure.example
+├── compose.example.yml
 ├── Dockerfile
 ├── pyproject.toml
 └── README.md
 ```
+
+
+## Operations quick links
+
+- Local HTTP endpoint: `http://localhost:8000/mcp`
+- Health endpoint: `http://localhost:8000/health`
+- Compose example: `compose.example.yml`
+- Runtime smoke test: `scripts/runtime-smoke.sh`
+- CI workflow: `.github/workflows/ci.yml`
+- Security workflow: `.github/workflows/security.yml`
+- Release workflow: `.github/workflows/release.yml`
 
 ## Quick start
 
