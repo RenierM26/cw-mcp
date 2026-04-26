@@ -69,4 +69,28 @@ docker compose -f compose.example.yml pull
 docker compose -f compose.example.yml up -d
 ```
 
-For stricter production deployments, replace `latest` with the SHA tag published by GitHub Actions.
+For stricter production deployments, replace `latest` with either a release tag such as `v0.1.0` or the SHA tag published by GitHub Actions.
+
+
+## 6. Release images
+
+Release tags publish immutable versioned container images. Tag releases with semantic versions:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+This publishes:
+
+```text
+ghcr.io/renierm26/connectwise-manage-mcp:v0.1.0
+```
+
+You can then pin Compose to that version instead of `latest`:
+
+```yaml
+image: ghcr.io/renierm26/connectwise-manage-mcp:v0.1.0
+```
+
+A manual release workflow is also available from GitHub Actions when you need to create a release from the current default branch.
