@@ -509,7 +509,7 @@ async def create_ticket(
     return {"ok": True, "data": ticket, "summary": _ticket_summary(ticket)}
 
 
-@mcp.tool(description="Update basic ticket text fields. Use this to change the ticket subject/summary and/or initial description. Requires ticket_id plus summary and/or initial_description. Makes one PATCH call.")
+@mcp.tool(description="Update basic ticket text fields. Use this to change the ticket subject/summary and/or initial description. Requires ticket_id plus summary and/or initial_description. Summary updates patch the ticket. Initial description updates patch the oldest detail-description note, or create the first detail note when none exists.")
 async def update_ticket_details(
     ticket_id: int,
     summary: str | None = None,

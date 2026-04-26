@@ -309,18 +309,45 @@ class ConnectWiseClient:
         summary: str | None = None,
         initial_description: str | None = None,
     ) -> dict[str, Any]:
-        """Patch basic ticket text fields."""
+        """Patch basic ticket text fields.
 
-        patches: list[dict[str, Any]] = []
-        if summary is not None:
-            patches.append({"op": "replace", "path": "summary", "value": summary})
-        if initial_description is not None:
-            patches.append({"op": "replace", "path": "initialDescription", "value": initial_description})
+        ConnectWise stores the user-facing initial description as the oldest
+        detail-description note. Updating ``initial_description`` therefore patches that
+        note instead of the ticket object's create-only ``initialDescription`` field.
+        """
 
-        if not patches:
+        if summary is None and initial_description is None:
             raise ConnectWiseError("No ticket detail fields were provided to update.")
 
-        return await self._request("PATCH", f"/service/tickets/{ticket_id}", json=patches)
+        result: dict[str, Any] = {}
+        if summary is not None:
+            result["ticket"] = await self._request(
+                "PATCH",
+                f"/service/tickets/{ticket_id}",
+                json=[{"op": "replace", "path": "summary", "value": summary}],
+            )
+
+        if initial_description is not None:
+            notes = await self.get_ticket_notes(ticket_id, page=1, page_size=self.settings.cw_max_page_size, order_by="dateCreated asc")
+            detail_notes = [note for note in notes if note.get("detailDescriptionFlag")]
+            if not detail_notes:
+                result["initialDescriptionNote"] = await self.add_ticket_note(
+                    ticket_id,
+                    initial_description,
+                    internal=False,
+                )
+            else:
+                initial_note = detail_notes[0]
+                note_id = initial_note.get("id")
+                if not isinstance(note_id, int):
+                    raise ConnectWiseError("Could not determine the initial description note id for this ticket.")
+                result["initialDescriptionNote"] = await self._request(
+                    "PATCH",
+                    f"/service/tickets/{ticket_id}/notes/{note_id}",
+                    json=[{"op": "replace", "path": "text", "value": initial_description}],
+                )
+
+        return result
 
     async def update_ticket_status(self, ticket_id: int, status: str) -> dict[str, Any]:
         """Replace the current ticket status by name."""
