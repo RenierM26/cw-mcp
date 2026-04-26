@@ -8,6 +8,8 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ### Added
 
+- Added `get_ticket_type_hierarchy` and simplified classification tool descriptions for smaller-model workflows.
+- Added `update_ticket_type_hierarchy_fast` for n8n workflows that set board/type/subtype/item with one PATCH call.
 - Added `update_ticket_classifications_fast` for high-volume automation flows that already know valid ticket classification values and need to avoid preflight read/lookup calls.
 - `update_ticket_classifications` now accepts numeric `board_id` to move tickets without first resolving the board name.
 - Preflight configuration CLI (`cwmcp-preflight`) for local/deployment validation without calling ConnectWise.

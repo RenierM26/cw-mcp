@@ -230,3 +230,40 @@ async def test_update_ticket_classifications_fast_skips_preflight_reads(
         "impact": None,
         "source": None,
     }
+
+
+async def test_update_ticket_type_hierarchy_fast_uses_single_patch_surface(
+    fake_client: FakeClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail_get_ticket(ticket_id: int) -> dict[str, Any]:
+        raise AssertionError("get_ticket should not be called by the n8n hierarchy fast path")
+
+    async def fail_list_boards(**kwargs: Any) -> list[dict[str, Any]]:
+        raise AssertionError("list_boards should not be called by the n8n hierarchy fast path")
+
+    monkeypatch.setattr(fake_client, "get_ticket", fail_get_ticket)
+    monkeypatch.setattr(fake_client, "list_boards", fail_list_boards)
+
+    result = await tickets_module.update_ticket_type_hierarchy_fast(
+        ticket_id=12345,
+        board_id=65,
+        type_name="Incident",
+        sub_type_name="Software",
+        item_name="Fix/Restore",
+    )
+
+    assert result["ok"] is True
+    assert result["validated"] is False
+    assert result["updated"] == {
+        "boardId": 65,
+        "type": "Incident",
+        "subType": "Software",
+        "item": "Fix/Restore",
+    }
+    assert fake_client.updated_classifications is not None
+    assert fake_client.updated_classifications["ticket_id"] == 12345
+    assert fake_client.updated_classifications["board_id"] == 65
+    assert fake_client.updated_classifications["type_name"] == "Incident"
+    assert fake_client.updated_classifications["sub_type_name"] == "Software"
+    assert fake_client.updated_classifications["item_name"] == "Fix/Restore"
