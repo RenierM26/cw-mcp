@@ -60,6 +60,7 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/connectwise-manage-mcp
           tags: |
             type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=latest
             type=sha
 
       - name: Build and push release image
