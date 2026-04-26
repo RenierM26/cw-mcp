@@ -94,3 +94,21 @@ image: ghcr.io/renierm26/connectwise-manage-mcp:v0.1.0
 ```
 
 A manual release workflow is also available from GitHub Actions when you need to create a release from the current default branch.
+
+
+## 7. Runtime smoke test
+
+The repository includes a small container smoke test used by CI:
+
+```bash
+./scripts/runtime-smoke.sh connectwise-manage-mcp:test
+```
+
+It starts the container with fake ConnectWise credentials and verifies:
+
+- the HTTP server starts
+- `/health` is reachable
+- `/mcp` rejects unauthenticated requests
+- `/mcp` does not reject requests with the configured bearer token
+
+The test intentionally does not call real ConnectWise APIs or require real secrets.
