@@ -643,6 +643,30 @@ async def test_update_ticket_details_creates_initial_description_note_when_missi
     }
 
 
+
+
+async def test_get_ticket_schedule_entries_uses_full_schedule_entries_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data=[{"id": 88, "objectId": 12345}]),
+    )
+
+    client = ConnectWiseClient()
+    entries = await client.get_ticket_schedule_entries(12345, page=2, page_size=10)
+
+    assert entries == [{"id": 88, "objectId": 12345}]
+    assert calls[0]["method"] == "GET"
+    assert calls[0]["url"].endswith("/schedule/entries")
+    assert calls[0]["params"] == {
+        "conditions": "objectId=12345 and type/id=4",
+        "page": 2,
+        "pageSize": 10,
+        "orderBy": "dateStart desc",
+    }
+
+
 async def test_add_ticket_schedule_entry_builds_service_ticket_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

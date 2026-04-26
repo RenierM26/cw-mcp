@@ -477,10 +477,12 @@ class ConnectWiseClient:
         """Return schedule entries linked to a service ticket."""
 
         params = {
+            "conditions": f"objectId={ticket_id} and type/id=4",
             "page": page,
             "pageSize": self._bounded_page_size(page_size),
+            "orderBy": "dateStart desc",
         }
-        return await self._request("GET", f"/service/tickets/{ticket_id}/scheduleentries", params=params)
+        return await self._request("GET", "/schedule/entries", params=params)
 
     async def add_ticket_schedule_entry(
         self,
