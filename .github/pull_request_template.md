@@ -9,6 +9,10 @@
 - [ ] `pytest -q`
 - [ ] Docker/runtime smoke test passes, if deployment behavior changed
 
+## Changelog
+
+- [ ] `CHANGELOG.md` updated, or change is internal/docs-only and does not need an entry
+
 ## Deployment impact
 
 - [ ] No deployment impact
