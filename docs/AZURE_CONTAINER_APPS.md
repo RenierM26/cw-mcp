@@ -62,7 +62,13 @@ The MCP endpoint is:
 https://<your-app-fqdn>/mcp
 ```
 
-Health endpoint:
+Liveness endpoint:
+
+```text
+https://<your-app-fqdn>/live
+```
+
+Readiness/upstream health endpoint:
 
 ```text
 https://<your-app-fqdn>/health
@@ -70,7 +76,8 @@ https://<your-app-fqdn>/health
 
 Authentication:
 - `/mcp` should require `Authorization: Bearer <AUTH_BEARER_TOKEN>`
-- `/health` is left open for probes and simple operational checks
+- `/live` is left open for platform liveness probes and does not call ConnectWise
+- `/health` is left open for readiness checks that include ConnectWise reachability
 - `/health` intentionally returns only minimal operational status and does not expose raw ConnectWise system details
 - if `AUTH_ALLOWED_IPS` is set, `/mcp` will also enforce the configured IP or CIDR allowlist
 
@@ -190,7 +197,8 @@ If n8n sits in the same private environment, prefer the internal URL. That keeps
 
 After deployment, verify:
 
-1. `GET /health`
+1. `GET /live` for liveness
+2. `GET /health` for readiness
 2. MCP client can connect to `/mcp` with the bearer token
 3. `list_boards`
 4. `search_members`

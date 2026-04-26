@@ -58,7 +58,7 @@ The example Compose file applies conservative container hardening:
 - disables privilege escalation
 - enables a health check
 
-The health check calls `/health`, which verifies both local configuration and ConnectWise reachability. If ConnectWise is down or credentials are wrong, the container will report unhealthy.
+The container health check calls `/live`, which verifies the HTTP process without calling ConnectWise. Use `/health` separately for readiness checks that include configuration and ConnectWise reachability.
 
 ## 5. Updating
 
@@ -107,7 +107,7 @@ The repository includes a small container smoke test used by CI:
 It starts the container with fake ConnectWise credentials and verifies:
 
 - the HTTP server starts
-- `/health` is reachable
+- `/live` is reachable
 - `/mcp` rejects unauthenticated requests
 - `/mcp` does not reject requests with the configured bearer token
 
