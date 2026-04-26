@@ -8,6 +8,14 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ### Added
 
+### Changed
+
+### Security
+
+## [0.2.0] - 2026-04-26
+
+### Added
+
 - Added `upsert_managed_internal_note` for idempotent workflow notes: it uses a server-fixed stable note key, scopes duplicate cleanup to the note creator/API-member id, deletes duplicates, and updates or creates the surviving note.
 - Added ticket schedule/resource tools: `get_ticket_schedule_entries`, `add_ticket_schedule_entry`, `update_ticket_schedule_entry`, and `mark_ticket_schedule_entry_done`.
 - Added `update_ticket_details` to update an existing ticket summary/subject and initial description.

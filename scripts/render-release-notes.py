@@ -35,17 +35,24 @@ def main() -> None:
     version_heading = f"## [{args.version.lstrip('v')}]"
     dated_version_prefix = f"## [{args.version.lstrip('v')}] - "
 
+    body = ""
+    lines = changelog.splitlines()
     try:
         body = extract_section(changelog, version_heading)
     except SystemExit:
-        body = ""
-        lines = changelog.splitlines()
         for line in lines:
             if line.startswith(dated_version_prefix):
                 body = extract_section(changelog, line.strip())
                 break
         if not body:
-            body = extract_section(changelog, "## [Unreleased]")
+            raise SystemExit(
+                f"CHANGELOG.md must contain a versioned section for {args.version}, "
+                f"for example: ## [{args.version.lstrip('v')}] - YYYY-MM-DD. "
+                "Do not release directly from [Unreleased]; move entries into the release section first."
+            )
+
+    if not body.strip():
+        raise SystemExit(f"Changelog section for {args.version} is empty.")
 
     output = f"""Container image:
 
