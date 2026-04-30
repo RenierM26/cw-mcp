@@ -11,6 +11,7 @@ Important rules
 - Use update_ticket_classifications for validated updates.
 - Use patch_ticket_classifications_unvalidated only when workflow data is already known to be valid.
 - Use save_managed_internal_summary_note for repeat LLM summaries so duplicate notes are not created.
+- Use content_blocks for the managed summary note when the note needs blank lines. Blocks are joined with blank lines and are safer than empty string entries in content_lines.
 
 Workflow
 
@@ -149,17 +150,10 @@ save_managed_internal_summary_note
 Example arguments:
 {
   "ticket_id": 12345,
-  "content_lines": [
+  "content_blocks": [
     "LLM classification summary:",
-    "",
-    "Context: User cannot access VPN after password reset.",
-    "Classification applied: type_id=3, sub_type_id=9, item_id=14.",
-    "Status changed: status_id=2.",
-    "Reasoning: Notes and description indicate a remote-access VPN incident.",
-    "",
-    "Next recommended action:",
-    "- Validate user MFA and VPN profile.",
-    "- Ask user to retest after reset."
+    "Context: User cannot access VPN after password reset.\nClassification applied: type_id=3, sub_type_id=9, item_id=14.\nStatus changed: status_id=2.\nReasoning: Notes and description indicate a remote-access VPN incident.",
+    "Next recommended action:\n- Validate user MFA and VPN profile.\n- Ask user to retest after reset."
   ]
 }
 

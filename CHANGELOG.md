@@ -10,6 +10,7 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 - Added `update_ticket_note` and `delete_ticket_note` MCP tools for direct ticket-note management.
 - Added `text_lines`, `content_lines`, `initial_description_lines`, `notes_lines`, and `internal_notes_lines` inputs so MCP/automation clients can send formatted multi-line note text without fragile escaped newline strings.
+- Added `text_blocks`, `content_blocks`, `initial_description_blocks`, `notes_blocks`, and `internal_notes_blocks` inputs for paragraph notes that need blank lines without empty string array items.
 - Added id-based classification inputs for safer automation updates: `status_id`, `type_id`, `sub_type_id`, `item_id`, and `team_id`.
 
 ### Changed
@@ -20,7 +21,9 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 - Fixed board subtype lookups to use `/service/boards/{board_id}/typeSubTypeItemAssociations` and dedupe `subType` records, preventing broader board-level subtype results for some boards.
 - Added pagination for association-backed subtype and item lookups so large board/type hierarchies are not truncated.
 - `get_ticket_bundle` now derives `ticket.description` from the oldest `detailDescriptionFlag=true` note when direct ticket description fields are missing, and no longer falls back to `recordType`.
+- Documented `*_blocks` as the recommended note-formatting input for LLM workflows that need blank lines, including `save_managed_internal_summary_note` examples.
 - Verified live ConnectWise behavior for ticket search ordering and subtype lookup shapes against the 2026.4 SDK.
+- Verified live ConnectWise note create/read behavior preserves blank lines posted through `text_blocks`.
 
 ### Security
 

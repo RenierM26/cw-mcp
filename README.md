@@ -540,9 +540,50 @@ A typical triage flow is:
 3. `update_ticket_classifications`
 4. `add_ticket_note` if you want to record the action taken
 
-For multi-line notes, use `text_lines`, `content_lines`, `notes_lines`, or
-`internal_notes_lines` when your MCP client makes escaped newline strings awkward.
-The server joins those arrays with newline characters before sending them to ConnectWise.
+For paragraph-style notes, prefer `text_blocks`, `content_blocks`, `notes_blocks`, or
+`internal_notes_blocks`. The server joins blocks with blank lines, which avoids fragile
+empty-string line items in LLM workflows. Use `*_lines` only when you need exact
+line-by-line control; the server joins lines with newline characters.
+
+### Note formatting inputs
+
+Several note-writing tools accept three text shapes. Use exactly one shape per field:
+
+- Direct string: `text`, `content`, `initial_description`, `notes`, or `internal_notes`
+- Line array: `*_lines`, joined with single newline characters
+- Paragraph block array: `*_blocks`, joined with blank lines
+
+Prefer `*_blocks` for LLM-generated notes that need paragraph spacing. This avoids
+depending on empty string array entries, which some clients or smaller models may drop.
+Blank-line preservation was live-tested against ConnectWise by posting and reading back
+an internal ticket note.
+
+Example `add_ticket_note` arguments:
+
+```json
+{
+  "ticket_id": 12345,
+  "internal": true,
+  "text_blocks": [
+    "LLM triage summary:",
+    "User cannot access VPN after password reset.\nClassification appears to be remote-access VPN.",
+    "Next actions:\n- Validate MFA state\n- Ask user to retest"
+  ]
+}
+```
+
+Example `save_managed_internal_summary_note` arguments:
+
+```json
+{
+  "ticket_id": 12345,
+  "content_blocks": [
+    "LLM classification summary:",
+    "Classification applied: type_id=3, sub_type_id=9, item_id=14.\nStatus changed: status_id=2.",
+    "Reasoning: Notes and initial description indicate a remote-access VPN incident."
+  ]
+}
+```
 
 ## Example tool calls and results
 
@@ -753,11 +794,9 @@ Tool call arguments:
   "location_id": 7,
   "work_type": "Remote Support",
   "work_role": "Engineer",
-  "notes_lines": [
+  "notes_blocks": [
     "Investigated VPN reset issue.",
-    "",
-    "  - reset MFA",
-    "  - confirmed VPN access"
+    "- reset MFA\n- confirmed VPN access"
   ]
 }
 ```
