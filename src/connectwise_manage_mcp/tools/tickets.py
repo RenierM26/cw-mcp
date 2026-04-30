@@ -96,15 +96,27 @@ def _compose_text_field(
     field_name: str,
     value: str | None,
     lines: list[str] | None = None,
+    blocks: list[str] | None = None,
     *,
     required: bool = True,
 ) -> str | None:
-    """Build note text from a direct string or a list of already-formatted lines."""
+    """Build note text from a direct string, lines, or paragraph blocks."""
 
-    if value is not None and lines is not None:
-        raise ConnectWiseError(f"Provide either {field_name} or {field_name}_lines, not both.")
+    provided = [
+        name
+        for name, candidate in (
+            (field_name, value),
+            (f"{field_name}_lines", lines),
+            (f"{field_name}_blocks", blocks),
+        )
+        if candidate is not None
+    ]
+    if len(provided) > 1:
+        raise ConnectWiseError(f"Provide only one of {', '.join(provided)}.")
     if lines is not None:
         value = "\n".join(lines)
+    if blocks is not None:
+        value = "\n\n".join(blocks)
     if required and value is None:
         raise ConnectWiseError(f"{field_name} is required.")
     return value
@@ -702,12 +714,13 @@ async def create_ticket(
     return {"ok": True, "data": ticket, "summary": _ticket_summary(ticket)}
 
 
-@mcp.tool(description="Update basic ticket text fields. Use this to change the ticket subject/summary and/or initial description. Requires ticket_id plus summary, initial_description, or initial_description_lines. Use initial_description_lines when your MCP/automation client makes multi-line escaping awkward; lines are joined with newline characters. Summary updates patch the ticket. Initial description updates patch the oldest detail-description note, or create the first detail note when none exists.")
+@mcp.tool(description="Update basic ticket text fields. Required: ticket_id plus summary, initial_description, initial_description_lines, or initial_description_blocks. Use blocks for paragraph text; blocks join with blank lines. Summary updates patch the ticket. Initial description updates the oldest detail-description note or creates the first detail note.")
 async def update_ticket_details(
     ticket_id: int,
     summary: str | None = None,
     initial_description: str | None = None,
     initial_description_lines: list[str] | None = None,
+    initial_description_blocks: list[str] | None = None,
 ) -> dict[str, Any]:
     """Patch ticket subject/summary or initial description."""
 
@@ -716,6 +729,7 @@ async def update_ticket_details(
         "initial_description",
         initial_description,
         initial_description_lines,
+        initial_description_blocks,
         required=False,
     )
     result = await client.update_ticket_details(
@@ -758,33 +772,35 @@ async def update_ticket_status(ticket_id: int, status: str) -> dict[str, Any]:
     return {"ok": True, "data": result, "ticketId": ticket_id, "newStatus": status}
 
 
-@mcp.tool(description="Add a note to a ConnectWise service ticket. Use internal=true for internal-only notes. Use text for a normal string, or text_lines when your MCP/automation client makes multi-line escaping awkward; text_lines is joined with newline characters. Use this when you already know the ticket id and only need to append a note, not change classifications or time entries.")
+@mcp.tool(description="Add a note to a ticket. Required: ticket_id and text, text_lines, or text_blocks. Use text_blocks for paragraph text; blocks join with blank lines. Use internal=true for internal-only notes.")
 async def add_ticket_note(
     ticket_id: int,
     text: str | None = None,
     internal: bool = True,
     text_lines: list[str] | None = None,
+    text_blocks: list[str] | None = None,
 ) -> dict[str, Any]:
     """Add a note to a ticket and echo whether it was marked internal."""
 
     client = ConnectWiseClient()
-    note_text = _compose_text_field("text", text, text_lines)
+    note_text = _compose_text_field("text", text, text_lines, text_blocks)
     result = await client.add_ticket_note(ticket_id, text=note_text or "", internal=internal)
     return {"ok": True, "data": result, "ticketId": ticket_id, "internal": internal}
 
 
-@mcp.tool(description="Update an existing ConnectWise ticket note. Use text for a normal string, or text_lines when your MCP/automation client makes multi-line escaping awkward; text_lines is joined with newline characters. Use internal to change the note's internal-only flag, or leave it omitted to only change the text.")
+@mcp.tool(description="Update a ticket note. Required: ticket_id, note_id, and text, text_lines, or text_blocks. Use text_blocks for paragraph text; blocks join with blank lines. Optional: internal.")
 async def update_ticket_note(
     ticket_id: int,
     note_id: int,
     text: str | None = None,
     internal: bool | None = None,
     text_lines: list[str] | None = None,
+    text_blocks: list[str] | None = None,
 ) -> dict[str, Any]:
     """Update a ticket note's text and optionally its internal flag."""
 
     client = ConnectWiseClient()
-    note_text = _compose_text_field("text", text, text_lines)
+    note_text = _compose_text_field("text", text, text_lines, text_blocks)
     result = await client.update_ticket_note(ticket_id, note_id, text=note_text or "", internal=internal)
     return {
         "ok": True,
@@ -807,11 +823,12 @@ async def delete_ticket_note(ticket_id: int, note_id: int) -> dict[str, Any]:
 MANAGED_INTERNAL_NOTE_KEY = "llm-ticket-summary"
 
 
-@mcp.tool(description="Save the workflow-managed internal summary note on a ticket. Required: ticket_id and content or content_lines. Use this for repeat LLM summaries instead of add_ticket_note. Prevents duplicate managed notes.")
+@mcp.tool(description="Save the workflow-managed internal summary note on a ticket. Required: ticket_id and content, content_lines, or content_blocks. Use content_blocks for paragraph text; blocks join with blank lines. Use this for repeat LLM summaries instead of add_ticket_note.")
 async def save_managed_internal_summary_note(
     ticket_id: int,
     content: str | None = None,
     content_lines: list[str] | None = None,
+    content_blocks: list[str] | None = None,
 ) -> dict[str, Any]:
     """Idempotently create/update a workflow-managed internal note.
 
@@ -823,7 +840,7 @@ async def save_managed_internal_summary_note(
 
     note_key = MANAGED_INTERNAL_NOTE_KEY
     client = ConnectWiseClient()
-    content_text = _compose_text_field("content", content, content_lines)
+    content_text = _compose_text_field("content", content, content_lines, content_blocks)
     marker = _managed_note_marker(note_key)
     desired_text = _managed_note_text(note_key, content_text or "")
     desired_plain = _normalize_note_text(content_text)
@@ -1261,7 +1278,7 @@ async def mark_ticket_schedule_entry_done(schedule_entry_id: int, done: bool = T
     return {"ok": True, "scheduleEntryId": schedule_entry_id, "done": done, "data": entry, "summary": _schedule_entry_summary(entry)}
 
 
-@mcp.tool(description="Add a time entry against a ConnectWise service ticket. Expects member_identifier as the exact ConnectWise member identifier string, not the numeric member id. work_type and work_role are exact names, not ids. location_id is an optional numeric location id. Use notes/internal_notes for normal strings, or notes_lines/internal_notes_lines when your MCP/automation client makes multi-line escaping awkward; lines are joined with newline characters. Recommended sequence: search_members, optional list_locations, list_work_types, list_work_roles, then add_ticket_time_entry. If time entry creation fails because of location restrictions, call list_locations and retry with an allowed location_id.")
+@mcp.tool(description="Add a time entry against a ConnectWise service ticket. Expects member_identifier as the exact ConnectWise member identifier string, not numeric member id. work_type and work_role are exact names, not ids. Use notes_blocks/internal_notes_blocks for paragraph text; blocks join with blank lines. Recommended sequence: search_members, optional list_locations, list_work_types, list_work_roles, then add_ticket_time_entry.")
 async def add_ticket_time_entry(
     ticket_id: int,
     member_identifier: str,
@@ -1277,6 +1294,8 @@ async def add_ticket_time_entry(
     internal_notes: str | None = None,
     notes_lines: list[str] | None = None,
     internal_notes_lines: list[str] | None = None,
+    notes_blocks: list[str] | None = None,
+    internal_notes_blocks: list[str] | None = None,
     email_resource_flag: bool = False,
     email_contact_flag: bool = False,
     email_cc_flag: bool = False,
@@ -1298,6 +1317,8 @@ async def add_ticket_time_entry(
         internal_notes: Optional internal-only notes.
         notes_lines: Optional customer-facing note lines, joined with newlines.
         internal_notes_lines: Optional internal-only note lines, joined with newlines.
+        notes_blocks: Optional customer-facing note blocks, joined with blank lines.
+        internal_notes_blocks: Optional internal-only note blocks, joined with blank lines.
         email_resource_flag: Whether to email the resource.
         email_contact_flag: Whether to email the contact.
         email_cc_flag: Whether to email CC recipients.
@@ -1321,11 +1342,12 @@ async def add_ticket_time_entry(
         work_type=work_type,
         work_role=work_role,
     )
-    notes_text = _compose_text_field("notes", notes, notes_lines, required=False)
+    notes_text = _compose_text_field("notes", notes, notes_lines, notes_blocks, required=False)
     internal_notes_text = _compose_text_field(
         "internal_notes",
         internal_notes,
         internal_notes_lines,
+        internal_notes_blocks,
         required=False,
     )
     entry = await client.add_time_entry(

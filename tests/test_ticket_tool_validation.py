@@ -229,6 +229,24 @@ async def test_add_ticket_time_entry_accepts_formatted_note_lines(fake_client: F
     assert fake_client.added_time_entry["internal_notes"] == "Internal:\n\n  MFA reset completed"
 
 
+async def test_add_ticket_time_entry_accepts_formatted_note_blocks(fake_client: FakeClient) -> None:
+    result = await tickets_module.add_ticket_time_entry(
+        ticket_id=12345,
+        member_identifier="helpdesk1",
+        time_start="2026-04-20T15:30:00Z",
+        actual_hours=0.25,
+        notes_blocks=["Customer note:", "Confirmed remote access works"],
+        internal_notes_blocks=["Internal:", "MFA reset completed\nNo user-visible changes."],
+    )
+
+    assert result["ok"] is True
+    assert fake_client.added_time_entry is not None
+    assert fake_client.added_time_entry["notes"] == "Customer note:\n\nConfirmed remote access works"
+    assert fake_client.added_time_entry["internal_notes"] == (
+        "Internal:\n\nMFA reset completed\nNo user-visible changes."
+    )
+
+
 async def test_update_ticket_classifications_accepts_board_id_without_board_lookup(
     fake_client: FakeClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -385,6 +403,27 @@ async def test_update_ticket_details_tool_updates_summary(fake_client: FakeClien
     assert result["updated"]["summary"] == "Updated subject"
 
 
+async def test_update_ticket_details_accepts_initial_description_blocks(fake_client: FakeClient) -> None:
+    async def update_ticket_details(ticket_id: int, **kwargs: Any) -> dict[str, Any]:
+        return {"id": ticket_id, **kwargs}
+
+    fake_client.update_ticket_details = update_ticket_details  # type: ignore[attr-defined]
+
+    result = await tickets_module.update_ticket_details(
+        12345,
+        initial_description_blocks=[
+            "User cannot access VPN after password reset.",
+            "Troubleshooting completed:\n- Reset MFA\n- Verified user profile",
+        ],
+    )
+
+    assert result["ok"] is True
+    assert result["updated"]["initialDescription"] == (
+        "User cannot access VPN after password reset.\n\n"
+        "Troubleshooting completed:\n- Reset MFA\n- Verified user profile"
+    )
+
+
 async def test_add_ticket_schedule_entry_validates_member_and_timestamp(fake_client: FakeClient) -> None:
     result = await tickets_module.add_ticket_schedule_entry(
         12345,
@@ -466,8 +505,27 @@ async def test_add_ticket_note_accepts_formatted_lines(fake_client: FakeClient) 
     assert fake_client.notes[0]["text"] == expected_text
 
 
+async def test_add_ticket_note_accepts_formatted_blocks(fake_client: FakeClient) -> None:
+    result = await tickets_module.add_ticket_note(
+        12345,
+        text_blocks=[
+            "Ticket reviewed:",
+            "Findings:\n- preserved indentation\n- preserved spacing between words",
+            "Next step: user retest.",
+        ],
+    )
+
+    expected_text = (
+        "Ticket reviewed:\n\n"
+        "Findings:\n- preserved indentation\n- preserved spacing between words\n\n"
+        "Next step: user retest."
+    )
+    assert result["ok"] is True
+    assert fake_client.notes[0]["text"] == expected_text
+
+
 async def test_add_ticket_note_rejects_text_and_text_lines(fake_client: FakeClient) -> None:
-    with pytest.raises(ConnectWiseError, match="Provide either text or text_lines"):
+    with pytest.raises(ConnectWiseError, match="Provide only one of text, text_lines"):
         await tickets_module.add_ticket_note(12345, text="one", text_lines=["two"])
 
 
@@ -483,6 +541,21 @@ async def test_update_ticket_note_accepts_formatted_lines(fake_client: FakeClien
 
     assert result["ok"] is True
     assert fake_client.notes[0]["text"] == "Updated:\n\n  Keep leading spaces"
+    assert fake_client.notes[0]["internalAnalysisFlag"] is True
+
+
+async def test_update_ticket_note_accepts_formatted_blocks(fake_client: FakeClient) -> None:
+    fake_client.notes = [{"id": 77, "text": "Old", "internalAnalysisFlag": False}]
+
+    result = await tickets_module.update_ticket_note(
+        12345,
+        77,
+        text_blocks=["Updated:", "Keep paragraph break\nand inner newline"],
+        internal=True,
+    )
+
+    assert result["ok"] is True
+    assert fake_client.notes[0]["text"] == "Updated:\n\nKeep paragraph break\nand inner newline"
     assert fake_client.notes[0]["internalAnalysisFlag"] is True
 
 
@@ -527,6 +600,23 @@ async def test_save_managed_internal_summary_note_accepts_formatted_lines(fake_c
     assert fake_client.notes[0]["text"] == (
         "[cw-mcp-managed-note:llm-ticket-summary]\n\n"
         "Summary:\n\n  Step 1: checked VPN\n  Step 2: reset MFA"
+    )
+
+
+async def test_save_managed_internal_summary_note_accepts_formatted_blocks(fake_client: FakeClient) -> None:
+    result = await tickets_module.save_managed_internal_summary_note(
+        12345,
+        content_blocks=[
+            "Summary:",
+            "Step 1: checked VPN\nStep 2: reset MFA",
+            "Next action: user retest.",
+        ],
+    )
+
+    assert result["action"] == "created"
+    assert fake_client.notes[0]["text"] == (
+        "[cw-mcp-managed-note:llm-ticket-summary]\n\n"
+        "Summary:\n\nStep 1: checked VPN\nStep 2: reset MFA\n\nNext action: user retest."
     )
 
 
