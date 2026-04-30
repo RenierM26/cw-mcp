@@ -1,0 +1,167 @@
+Example LLM Workflow: Read, Classify, and Note a Ticket
+
+Goal
+Read a ConnectWise ticket for context, choose the correct classification in the required hierarchy order, update the ticket, then write one managed internal summary note.
+
+Important rules
+- Prefer ids for update tools when available.
+- Do not choose subtype before type.
+- Do not choose item before subtype.
+- Only fetch board statuses if you intend to change the ticket status.
+- Use update_ticket_classifications for validated updates.
+- Use patch_ticket_classifications_unvalidated only when workflow data is already known to be valid.
+- Use save_managed_internal_summary_note for repeat LLM summaries so duplicate notes are not created.
+
+Workflow
+
+1. Read the ticket context.
+
+Tool:
+get_ticket_bundle
+
+Example arguments:
+{
+  "ticket_id": 12345,
+  "notes_page_size": 50,
+  "time_entries_page_size": 25
+}
+
+Use the result to understand:
+- ticket.summary.summary
+- ticket.description
+- ticket.summary.board
+- ticket.summary.status
+- ticket.summary.type
+- ticket.summary.subType
+- ticket.summary.item
+- ticket.summary.priority
+- notes.data
+- timeEntries.data
+
+If include_raw=true is used, prefer raw ticket ids when available, especially board.id.
+
+2. Resolve the board id if needed.
+
+Skip this step if the ticket raw data already includes a usable board id.
+
+Tool:
+list_boards
+
+Example arguments:
+{
+  "name": "Service Desk",
+  "inactive": false
+}
+
+Choose the matching board id.
+
+3. Optional: fetch statuses only if changing status.
+
+Tool:
+get_board_statuses
+
+Example arguments:
+{
+  "board_id": 12
+}
+
+Choose status_id only if the workflow should change the ticket status. If status should stay unchanged, skip this step and do not pass status_id.
+
+4. Fetch hierarchy step 1: types.
+
+Tool:
+get_ticket_type_hierarchy
+
+Example arguments:
+{
+  "board_id": 12
+}
+
+Choose type_id from the returned types.
+
+5. Fetch hierarchy step 2: subtypes.
+
+Tool:
+get_ticket_type_hierarchy
+
+Example arguments:
+{
+  "board_id": 12,
+  "type_id": 3
+}
+
+Choose sub_type_id from the returned subtypes.
+
+6. Fetch hierarchy step 3: items.
+
+Tool:
+get_ticket_type_hierarchy
+
+Example arguments:
+{
+  "board_id": 12,
+  "type_id": 3,
+  "subtype_id": 9
+}
+
+Choose item_id from the returned items.
+
+Note the spelling difference:
+- Lookup argument: subtype_id
+- Update argument: sub_type_id
+
+7. Update the ticket classification.
+
+Tool:
+update_ticket_classifications
+
+Example arguments when also changing status:
+{
+  "ticket_id": 12345,
+  "board_id": 12,
+  "status_id": 2,
+  "type_id": 3,
+  "sub_type_id": 9,
+  "item_id": 14
+}
+
+Example arguments when leaving status unchanged:
+{
+  "ticket_id": 12345,
+  "board_id": 12,
+  "type_id": 3,
+  "sub_type_id": 9,
+  "item_id": 14
+}
+
+Optional fields if known and appropriate:
+- priority_id
+- team_id
+- severity
+- impact
+- source
+
+8. Write the managed internal summary note.
+
+Tool:
+save_managed_internal_summary_note
+
+Example arguments:
+{
+  "ticket_id": 12345,
+  "content_lines": [
+    "LLM classification summary:",
+    "",
+    "Context: User cannot access VPN after password reset.",
+    "Classification applied: type_id=3, sub_type_id=9, item_id=14.",
+    "Status changed: status_id=2.",
+    "Reasoning: Notes and description indicate a remote-access VPN incident.",
+    "",
+    "Next recommended action:",
+    "- Validate user MFA and VPN profile.",
+    "- Ask user to retest after reset."
+  ]
+}
+
+If the workflow runs again, this tool updates the same managed internal note instead of creating a duplicate.
+
