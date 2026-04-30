@@ -134,7 +134,7 @@ async def list_boards(
     }, boards, include_raw=include_raw)
 
 
-@mcp.tool(description="Get the main lookup sets for a service board before update_ticket_status or update_ticket_classifications. Expects numeric ids: board_id is required, type_id is only for subtype lookup, and subtype_id is only for item lookup. Important hierarchy rule: item choices depend on subtype, and subtype choices depend on type. Returns the valid board-specific status, type, subtype, item, and team names that the write tools expect.")
+@mcp.tool(description="Get board lookup data before classification updates. Required: board_id. Optional: type_id to get subtypes, subtype_id to get items. Critical order: choose type_id, then subtype_id, then item_id. Prefer returned ids in update tools.")
 async def get_board_lookup(
     board_id: int,
     type_id: int | None = None,
@@ -154,8 +154,8 @@ async def get_board_lookup(
 
     Prerequisites:
         Call ``list_boards`` first if the correct ``board_id`` is not already known.
-        Write tools such as ``update_ticket_classifications`` use names, not ids, so this
-        lookup is the safest way to discover valid names before patching a ticket.
+        Write tools such as ``update_ticket_classifications`` prefer ids when available,
+        so this lookup is the safest way to discover valid ids before patching a ticket.
     """
 
     client = ConnectWiseClient()
@@ -190,7 +190,7 @@ async def get_board_lookup(
     return _with_optional_raw(result, raw_payload, include_raw=include_raw)
 
 
-@mcp.tool(description="Get service board statuses for a board id. Expects a numeric board_id and returns status ids plus names. Usually call list_boards first if you only know the board name, then use the returned status names in update_ticket_status or update_ticket_classifications.")
+@mcp.tool(description="Get valid statuses for a board. Required: board_id. Use returned status_id values in classification update tools. Call list_boards first if you only know the board name.")
 async def get_board_statuses(board_id: int, include_raw: bool = False) -> dict[str, Any]:
     """Fetch statuses for a specific service board.
 
@@ -203,8 +203,8 @@ async def get_board_statuses(board_id: int, include_raw: bool = False) -> dict[s
 
     Prerequisites:
         Call ``list_boards`` first if the correct ``board_id`` is not already known.
-        Status write tools expect status names, not ids, so this tool is best used to
-        discover the valid board-specific names before updating a ticket.
+        Classification write tools prefer ``status_id`` when available, so this tool is
+        best used to discover valid board-specific status ids before updating a ticket.
     """
 
     client = ConnectWiseClient()
@@ -217,7 +217,7 @@ async def get_board_statuses(board_id: int, include_raw: bool = False) -> dict[s
     }, statuses, include_raw=include_raw)
 
 
-@mcp.tool(description="Step 1 for ticket classification. Give board_id. Returns type ids and type names for that board. Choose one type before asking for subtypes.")
+@mcp.tool(description="Classification step 1. Required: board_id. Returns type_id values and names. Choose type_id before asking for subtypes.")
 async def get_board_types(board_id: int, include_raw: bool = False) -> dict[str, Any]:
     """Fetch board types for a specific service board."""
 
@@ -231,7 +231,7 @@ async def get_board_types(board_id: int, include_raw: bool = False) -> dict[str,
     }, board_types, include_raw=include_raw)
 
 
-@mcp.tool(description="Step 2 for ticket classification. Give board_id and the chosen type_id. Returns subtype ids and subtype names. Choose one subtype before asking for items.")
+@mcp.tool(description="Classification step 2. Required: board_id and chosen type_id. Returns sub_type_id values and names. Choose subtype before asking for items.")
 async def get_board_subtypes(board_id: int, type_id: int, include_raw: bool = False) -> dict[str, Any]:
     """Fetch board subtypes for a specific board type."""
 
@@ -246,7 +246,7 @@ async def get_board_subtypes(board_id: int, type_id: int, include_raw: bool = Fa
     }, subtypes, include_raw=include_raw)
 
 
-@mcp.tool(description="Step 3 for ticket classification. Give board_id, chosen type_id, and chosen subtype_id. Returns item ids and item names. Use the chosen type name, subtype name, and item name when updating the ticket.")
+@mcp.tool(description="Classification step 3. Required: board_id, type_id, and subtype_id. Returns item_id values and names. Use chosen ids when updating the ticket.")
 async def get_board_items(
     board_id: int,
     type_id: int,
@@ -267,7 +267,7 @@ async def get_board_items(
     }, items, include_raw=include_raw)
 
 
-@mcp.tool(description="Small-model helper for ticket classification. Use this when you already have board_id. Call order: 1) board_id only returns types. 2) add type_id to return subtypes for that type. 3) add subtype_id to return items for that subtype. Do not choose subtype before type. Do not choose item before subtype.")
+@mcp.tool(description="Small-model helper for ticket type hierarchy. Required: board_id. Call order: 1) board_id returns types. 2) add type_id for subtypes. 3) add subtype_id for items. Do not choose subtype before type or item before subtype.")
 async def get_ticket_type_hierarchy(
     board_id: int,
     type_id: int | None = None,
@@ -304,7 +304,7 @@ async def get_ticket_type_hierarchy(
             raw_payload["items"] = items
             result["subtypeId"] = subtype_id
             result["items"] = [_board_type_summary(item) for item in items]
-            result["nextStep"] = "choose type name, subtype name, and item name, then call update_ticket_type_hierarchy_fast"
+            result["nextStep"] = "choose type_id, sub_type_id, and item_id, then call update_ticket_type_hierarchy_fast"
 
     return _with_optional_raw(result, raw_payload, include_raw=include_raw)
 

@@ -136,9 +136,11 @@ ConnectWise write calls mix numeric ids and human-readable names. This is the ea
 - `board_id`, `type_id`, and `subtype_id` are numeric ids used by lookup tools
 - `board` in `create_ticket` is a board name, not a board id
 - `status` in `update_ticket_status` is a board-specific status name, not a status id
-- `board`, `status`, `type_name`, `sub_type_name`, `item_name`, `team`, `severity`, `impact`, and `source` in `update_ticket_classifications` are names, not ids
-- `type_name`, `sub_type_name`, and `item_name` in `update_ticket_classifications` are a hierarchy, not three independent fields
-- choose `type_name` first, then `sub_type_name`, then `item_name`
+- prefer ids in `update_ticket_classifications` when known: `board_id`, `status_id`, `priority_id`, `type_id`, `sub_type_id`, `item_id`, and `team_id`
+- name fields are still accepted for compatibility: `board`, `status`, `type_name`, `sub_type_name`, `item_name`, `team`, `severity`, `impact`, and `source`
+- lookup tools use `subtype_id`; update tools use `sub_type_id`
+- `type_id`, `sub_type_id`, and `item_id` are a hierarchy, not three independent fields
+- choose `type_id` first, then `sub_type_id`, then `item_id`
 - `member_identifier` in `add_ticket_time_entry` is a string identifier, not the numeric member id
 - `location_id` in `add_ticket_time_entry` is a numeric location id
 - `work_type` and `work_role` in `add_ticket_time_entry` are names, not ids
@@ -214,6 +216,8 @@ If a write fails validation or a required value is unknown, use the matching loo
 - `update_ticket_status`
 - `update_ticket_classifications`
 - `add_ticket_note`
+- `update_ticket_note`
+- `delete_ticket_note`
 - `get_ticket_notes`
 - `get_ticket_time_entries`
 - `add_ticket_time_entry`
@@ -503,6 +507,8 @@ This version is shaped around a common triage and update flow:
 - read time entries
 - update classification fields like status, priority, board, type, subtype, item, team, severity, impact, and source
 - add ticket notes
+- update ticket notes
+- delete ticket notes
 - add time entries
 - look up valid boards, statuses, types, subtypes, items, teams, members, work types, and work roles before updating
 
@@ -511,8 +517,8 @@ The quickest tool for AI-driven review is `get_ticket_bundle`, which returns the
 The safest classification flow is usually:
 1. `list_boards`
 2. `get_board_statuses` or `get_board_lookup`
-3. optionally `get_board_types`, `get_board_subtypes`, or `get_board_items` for explicit hierarchy calls
-4. `update_ticket_classifications`
+3. `get_ticket_type_hierarchy` or the step tools: `get_board_types`, then `get_board_subtypes`, then `get_board_items`
+4. `update_ticket_classifications` with ids when available
 
 The safest time-entry flow is usually:
 1. `search_members`
@@ -525,6 +531,10 @@ A typical triage flow is:
 2. decide on board/status/type updates
 3. `update_ticket_classifications`
 4. `add_ticket_note` if you want to record the action taken
+
+For multi-line notes, use `text_lines`, `content_lines`, `notes_lines`, or
+`internal_notes_lines` when your MCP client makes escaped newline strings awkward.
+The server joins those arrays with newline characters before sending them to ConnectWise.
 
 ## Example tool calls and results
 
@@ -614,11 +624,12 @@ Tool call arguments:
 ```json
 {
   "ticket_id": 12345,
-  "status": "In Progress",
-  "type_name": "Incident",
-  "sub_type_name": "Remote Access",
-  "item_name": "VPN",
-  "priority": "Priority 2"
+  "board_id": 12,
+  "status_id": 2,
+  "type_id": 3,
+  "sub_type_id": 9,
+  "item_id": 14,
+  "priority_id": 7
 }
 ```
 
@@ -629,13 +640,20 @@ Example result excerpt:
   "ok": true,
   "ticketId": 12345,
   "updated": {
-    "status": "In Progress",
-    "priority": "Priority 2",
+    "status": null,
+    "statusId": 2,
+    "priority": null,
+    "priorityId": 7,
     "board": null,
-    "type": "Incident",
-    "subType": "Remote Access",
-    "item": "VPN",
+    "boardId": 12,
+    "type": null,
+    "typeId": 3,
+    "subType": null,
+    "subTypeId": 9,
+    "item": null,
+    "itemId": 14,
     "team": null,
+    "teamId": null,
     "severity": null,
     "impact": null,
     "source": null
@@ -727,7 +745,12 @@ Tool call arguments:
   "location_id": 7,
   "work_type": "Remote Support",
   "work_role": "Engineer",
-  "notes": "Investigated VPN reset issue."
+  "notes_lines": [
+    "Investigated VPN reset issue.",
+    "",
+    "  - reset MFA",
+    "  - confirmed VPN access"
+  ]
 }
 ```
 
