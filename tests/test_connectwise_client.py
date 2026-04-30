@@ -410,7 +410,31 @@ async def test_add_time_entry_only_sends_optional_fields_when_supplied(
     }
 
 
-async def test_get_board_subtypes_uses_board_level_endpoint_and_filters_by_type(
+async def test_add_time_entry_preserves_multiline_notes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data={"id": 77}),
+    )
+
+    formatted_note = "Worked issue:\n\n  - reset MFA\n  - confirmed VPN"
+
+    client = ConnectWiseClient()
+    await client.add_time_entry(
+        ticket_id=12345,
+        member_identifier="helpdesk1",
+        time_start="2026-04-20T15:30:00Z",
+        notes=formatted_note,
+        internal_notes="Internal:\n\n  no escalation needed",
+    )
+
+    payload = calls[0]["json"]
+    assert payload["notes"] == formatted_note
+    assert payload["internalNotes"] == "Internal:\n\n  no escalation needed"
+
+
+async def test_get_board_subtypes_uses_association_endpoint_and_dedupes_by_type(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls = install_fake_async_client(
@@ -418,9 +442,9 @@ async def test_get_board_subtypes_uses_board_level_endpoint_and_filters_by_type(
         lambda method, url, **kwargs: FakeResponse(
             200,
             json_data=[
-                {"id": 9, "name": "Remote Access", "typeAssociationIds": [3]},
-                {"id": 10, "name": "Server", "typeAssociationIds": [4]},
-                {"id": 11, "name": "Fallback Shape", "typeAssociation": {"id": 3}},
+                {"id": 1, "subType": {"id": 9, "name": "Remote Access"}},
+                {"id": 2, "subType": {"id": 9, "name": "Remote Access"}},
+                {"id": 3, "subType": {"id": 10, "name": "Server"}},
             ],
         ),
     )
@@ -428,14 +452,18 @@ async def test_get_board_subtypes_uses_board_level_endpoint_and_filters_by_type(
     client = ConnectWiseClient()
     subtypes = await client.get_board_subtypes(12, 3)
 
-    assert calls[0]["url"].endswith("/service/boards/12/subtypes")
+    assert calls[0]["url"].endswith("/service/boards/12/typeSubTypeItemAssociations")
     assert calls[0]["params"] == {
-        "conditions": "inactiveFlag=false",
-        "childConditions": "typeAssociation/id=3",
-        "fields": "id,name",
-        "orderBy": "name asc",
+        "conditions": "type/id=3",
+        "fields": "subType/id,subType/name",
+        "orderBy": "subType/name asc",
+        "page": 1,
+        "pageSize": 100,
     }
-    assert [item["id"] for item in subtypes] == [9, 10, 11]
+    assert subtypes == [
+        {"id": 9, "name": "Remote Access"},
+        {"id": 10, "name": "Server"},
+    ]
 
 
 async def test_get_board_items_uses_board_level_endpoint_and_filters_by_subtype_associations(
@@ -461,6 +489,8 @@ async def test_get_board_items_uses_board_level_endpoint_and_filters_by_subtype_
         "conditions": "type/id=3 and subType/id=9 and item/inactiveFlag=false",
         "fields": "item/id,item/name",
         "orderBy": "item/name asc",
+        "page": 1,
+        "pageSize": 100,
     }
     assert [item["id"] for item in items] == [14, 16]
 
@@ -563,6 +593,29 @@ async def test_update_ticket_classifications_uses_priority_id_and_primitive_impa
     assert {"op": "replace", "path": "priority", "value": {"id": 7}} in calls[0]["json"]
     assert {"op": "replace", "path": "severity", "value": "Low"} in calls[0]["json"]
     assert {"op": "replace", "path": "impact", "value": "Low"} in calls[0]["json"]
+
+
+async def test_update_ticket_classifications_prefers_lookup_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data={"id": 12345}),
+    )
+
+    client = ConnectWiseClient()
+    await client.update_ticket_classifications(
+        12345,
+        status_id=2,
+        type_id=3,
+        sub_type_id=9,
+        item_id=14,
+        team_id=4,
+    )
+
+    assert {"op": "replace", "path": "status", "value": {"id": 2}} in calls[0]["json"]
+    assert {"op": "replace", "path": "type", "value": {"id": 3}} in calls[0]["json"]
+    assert {"op": "replace", "path": "subType", "value": {"id": 9}} in calls[0]["json"]
+    assert {"op": "replace", "path": "item", "value": {"id": 14}} in calls[0]["json"]
+    assert {"op": "replace", "path": "team", "value": {"id": 4}} in calls[0]["json"]
 
 
 def test_update_ticket_classifications_rejects_priority_name_and_id() -> None:
@@ -726,6 +779,23 @@ async def test_update_schedule_entry_requires_a_field() -> None:
 
     with pytest.raises(ConnectWiseError, match="No schedule entry fields"):
         await client.update_schedule_entry(88)
+
+
+async def test_add_ticket_note_preserves_multiline_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data={"id": 77}),
+    )
+
+    formatted_note = "Ticket reviewed:\n\n  - first line\n  - second line"
+
+    client = ConnectWiseClient()
+    await client.add_ticket_note(12345, formatted_note, internal=True)
+
+    assert calls[0]["method"] == "POST"
+    assert calls[0]["url"].endswith("/service/tickets/12345/notes")
+    assert calls[0]["json"]["text"] == formatted_note
+    assert calls[0]["json"]["internalAnalysisFlag"] is True
 
 
 async def test_update_ticket_note_patches_text_and_internal_flag(monkeypatch: pytest.MonkeyPatch) -> None:

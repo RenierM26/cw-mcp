@@ -168,4 +168,4 @@ async def test_get_ticket_type_hierarchy_returns_only_type_tree(fake_client: Fak
     assert result["types"] == [{"id": 3, "name": "Incident", "inactive": None, "defaultFlag": None}]
     assert result["subtypes"] == [{"id": 9, "name": "Remote Access", "inactive": None, "defaultFlag": None}]
     assert result["items"] == [{"id": 14, "name": "VPN", "inactive": None, "defaultFlag": None}]
-    assert result["nextStep"] == "choose type name, subtype name, and item name, then call update_ticket_type_hierarchy_fast"
+    assert result["nextStep"] == "choose type_id, sub_type_id, and item_id, then call update_ticket_type_hierarchy_fast"

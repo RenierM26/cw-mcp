@@ -360,14 +360,19 @@ class ConnectWiseClient:
         ticket_id: int,
         *,
         status: str | None = None,
+        status_id: int | None = None,
         priority: str | None = None,
         priority_id: int | None = None,
         board: str | None = None,
         board_id: int | None = None,
         type_name: str | None = None,
+        type_id: int | None = None,
         sub_type_name: str | None = None,
+        sub_type_id: int | None = None,
         item_name: str | None = None,
+        item_id: int | None = None,
         team: str | None = None,
+        team_id: int | None = None,
         severity: str | None = None,
         impact: str | None = None,
         source: str | None = None,
@@ -377,14 +382,19 @@ class ConnectWiseClient:
         Args:
             ticket_id: Numeric ticket id to update.
             status: Optional status name.
+            status_id: Optional numeric status id. Prefer this for reliable automation updates.
             priority: Optional priority name.
             priority_id: Optional numeric priority id. Prefer this for reliable automation updates.
             board: Optional board name.
             board_id: Optional numeric board id.
             type_name: Optional ticket type name.
+            type_id: Optional numeric ticket type id.
             sub_type_name: Optional ticket subtype name.
+            sub_type_id: Optional numeric ticket subtype id.
             item_name: Optional ticket item name.
+            item_id: Optional numeric ticket item id.
             team: Optional team name.
+            team_id: Optional numeric team id.
             severity: Optional severity name.
             impact: Optional impact name.
             source: Optional source name.
@@ -398,8 +408,18 @@ class ConnectWiseClient:
 
         if board and board_id is not None:
             raise ConnectWiseError("Provide either board or board_id, not both.")
+        if status and status_id is not None:
+            raise ConnectWiseError("Provide either status or status_id, not both.")
         if priority and priority_id is not None:
             raise ConnectWiseError("Provide either priority or priority_id, not both.")
+        if type_name and type_id is not None:
+            raise ConnectWiseError("Provide either type_name or type_id, not both.")
+        if sub_type_name and sub_type_id is not None:
+            raise ConnectWiseError("Provide either sub_type_name or sub_type_id, not both.")
+        if item_name and item_id is not None:
+            raise ConnectWiseError("Provide either item_name or item_id, not both.")
+        if team and team_id is not None:
+            raise ConnectWiseError("Provide either team or team_id, not both.")
 
         patches: list[dict[str, Any]] = []
 
@@ -410,6 +430,8 @@ class ConnectWiseClient:
 
         if status:
             add_replace("status", {"name": status})
+        if status_id is not None:
+            add_replace("status", {"id": status_id})
         if priority:
             add_replace("priority", {"name": priority})
         if priority_id is not None:
@@ -420,12 +442,20 @@ class ConnectWiseClient:
             add_replace("board", {"id": board_id})
         if type_name:
             add_replace("type", {"name": type_name})
+        if type_id is not None:
+            add_replace("type", {"id": type_id})
         if sub_type_name:
             add_replace("subType", {"name": sub_type_name})
+        if sub_type_id is not None:
+            add_replace("subType", {"id": sub_type_id})
         if item_name:
             add_replace("item", {"name": item_name})
+        if item_id is not None:
+            add_replace("item", {"id": item_id})
         if team:
             add_replace("team", {"name": team})
+        if team_id is not None:
+            add_replace("team", {"id": team_id})
         if severity:
             add_replace("severity", severity)
         if impact:
@@ -732,22 +762,36 @@ class ConnectWiseClient:
     async def get_board_subtypes(self, board_id: int, type_id: int) -> list[dict[str, Any]]:
         """Fetch subtypes for a specific board/type combination.
 
-        ConnectWise exposes board subtypes at the board level rather than under a nested
-        ``/types/{type_id}/subtypes`` route. Query the board-level collection with an
-        active-only parent condition plus childConditions for the type association so the
-        response stays compact and hierarchy-specific.
+        ConnectWise's board-subtype collection can return broader board-level subtype
+        data. Query the board type/subtype/item association endpoint instead so the
+        returned subtypes are actually valid for the chosen type.
         """
 
-        return await self._request(
-            "GET",
-            f"/service/boards/{board_id}/subtypes",
-            params={
-                "conditions": "inactiveFlag=false",
-                "childConditions": f"typeAssociation/id={type_id}",
-                "fields": "id,name",
-                "orderBy": "name asc",
-            },
-        )
+        page_size = self.settings.cw_max_page_size
+        page = 1
+        subtypes_by_id: dict[int, dict[str, Any]] = {}
+        while True:
+            associations = await self._request(
+                "GET",
+                f"/service/boards/{board_id}/typeSubTypeItemAssociations",
+                params={
+                    "conditions": f"type/id={type_id}",
+                    "fields": "subType/id,subType/name",
+                    "orderBy": "subType/name asc",
+                    "page": page,
+                    "pageSize": page_size,
+                },
+            )
+            for association in associations:
+                subtype = association.get("subType") or {}
+                subtype_id = subtype.get("id")
+                subtype_name = subtype.get("name")
+                if isinstance(subtype_id, int) and subtype_id not in subtypes_by_id:
+                    subtypes_by_id[subtype_id] = {"id": subtype_id, "name": subtype_name}
+            if len(associations) < page_size:
+                break
+            page += 1
+        return list(subtypes_by_id.values())
 
     async def get_board_items(self, board_id: int, type_id: int, subtype_id: int) -> list[dict[str, Any]]:
         """Fetch items for a specific board/type/subtype combination.
@@ -758,25 +802,32 @@ class ConnectWiseClient:
         item list with only ``id`` and ``name``.
         """
 
-        associations = await self._request(
-            "GET",
-            f"/service/boards/{board_id}/typeSubTypeItemAssociations",
-            params={
-                "conditions": (
-                    f"type/id={type_id} and subType/id={subtype_id} and item/inactiveFlag=false"
-                ),
-                "fields": "item/id,item/name",
-                "orderBy": "item/name asc",
-            },
-        )
-
+        page_size = self.settings.cw_max_page_size
+        page = 1
         items_by_id: dict[int, dict[str, Any]] = {}
-        for association in associations:
-            item = association.get("item") or {}
-            item_id = item.get("id")
-            item_name = item.get("name")
-            if isinstance(item_id, int) and item_id not in items_by_id:
-                items_by_id[item_id] = {"id": item_id, "name": item_name}
+        while True:
+            associations = await self._request(
+                "GET",
+                f"/service/boards/{board_id}/typeSubTypeItemAssociations",
+                params={
+                    "conditions": (
+                        f"type/id={type_id} and subType/id={subtype_id} and item/inactiveFlag=false"
+                    ),
+                    "fields": "item/id,item/name",
+                    "orderBy": "item/name asc",
+                    "page": page,
+                    "pageSize": page_size,
+                },
+            )
+            for association in associations:
+                item = association.get("item") or {}
+                item_id = item.get("id")
+                item_name = item.get("name")
+                if isinstance(item_id, int) and item_id not in items_by_id:
+                    items_by_id[item_id] = {"id": item_id, "name": item_name}
+            if len(associations) < page_size:
+                break
+            page += 1
         return list(items_by_id.values())
 
     async def get_board_item_associations(self, board_id: int, item_id: int) -> list[dict[str, Any]]:

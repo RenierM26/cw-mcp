@@ -69,6 +69,24 @@ def _managed_note_text(note_key: str, content: str) -> str:
     return f"{_managed_note_marker(note_key)}\n\n{content}"
 
 
+def _compose_text_field(
+    field_name: str,
+    value: str | None,
+    lines: list[str] | None = None,
+    *,
+    required: bool = True,
+) -> str | None:
+    """Build note text from a direct string or a list of already-formatted lines."""
+
+    if value is not None and lines is not None:
+        raise ConnectWiseError(f"Provide either {field_name} or {field_name}_lines, not both.")
+    if lines is not None:
+        value = "\n".join(lines)
+    if required and value is None:
+        raise ConnectWiseError(f"{field_name} is required.")
+    return value
+
+
 def _normalize_note_text(value: str | None) -> str:
     """Normalize note text for duplicate detection."""
 
@@ -168,6 +186,15 @@ def _find_by_name(records: list[dict[str, Any]], name: str, *, field: str = "nam
     return None
 
 
+def _find_by_id(records: list[dict[str, Any]], record_id: int) -> dict[str, Any] | None:
+    """Return the first record whose id matches the provided id."""
+
+    for record in records:
+        if record.get("id") == record_id:
+            return record
+    return None
+
+
 def _sorted_present_strings(records: list[dict[str, Any]], field: str = "name") -> list[str]:
     """Collect a sorted list of non-empty string field values from raw API records."""
 
@@ -177,6 +204,17 @@ def _sorted_present_strings(records: list[dict[str, Any]], field: str = "name") 
         if isinstance(value, str) and value:
             values.append(value)
     return sorted(values)
+
+
+def _sorted_present_ids(records: list[dict[str, Any]]) -> list[str]:
+    """Collect a sorted list of id values from raw API records."""
+
+    values: list[int] = []
+    for record in records:
+        value = record.get("id")
+        if isinstance(value, int):
+            values.append(value)
+    return [str(value) for value in sorted(values)]
 
 
 def _parse_iso_timestamp(value: str, field_name: str) -> None:
@@ -221,16 +259,25 @@ async def _validate_ticket_status(
     *,
     board_id: int,
     board_name: str,
-    status: str,
+    status: str | None = None,
+    status_id: int | None = None,
 ) -> None:
     """Ensure a status exists on the chosen board before patching a ticket."""
 
+    if status and status_id is not None:
+        raise ConnectWiseError("Provide either status or status_id, not both.")
     statuses = await client.get_board_statuses(board_id)
-    if _find_by_name(statuses, status) is None:
+    if status and _find_by_name(statuses, status) is None:
         valid_names = _sorted_present_strings(statuses)
         raise ConnectWiseError(
             f"Status '{status}' is not valid for board '{board_name}'. "
             f"Call get_board_statuses or get_board_lookup first. Valid statuses: {', '.join(valid_names)}"
+        )
+    if status_id is not None and _find_by_id(statuses, status_id) is None:
+        valid_ids = _sorted_present_ids(statuses)
+        raise ConnectWiseError(
+            f"status_id '{status_id}' is not valid for board '{board_name}'. "
+            f"Call get_board_statuses first. Valid status ids: {', '.join(valid_ids)}"
         )
 
 
@@ -241,15 +288,30 @@ async def _validate_ticket_classifications(
     board: str | None,
     board_id: int | None,
     status: str | None,
+    status_id: int | None,
     type_name: str | None,
+    type_id: int | None,
     sub_type_name: str | None,
+    sub_type_id: int | None,
     item_name: str | None,
+    item_id: int | None,
     team: str | None,
+    team_id: int | None,
 ) -> None:
     """Preflight board-scoped classification values so write errors stay actionable."""
 
     if board and board_id is not None:
         raise ConnectWiseError("Provide either board or board_id, not both.")
+    if status and status_id is not None:
+        raise ConnectWiseError("Provide either status or status_id, not both.")
+    if type_name and type_id is not None:
+        raise ConnectWiseError("Provide either type_name or type_id, not both.")
+    if sub_type_name and sub_type_id is not None:
+        raise ConnectWiseError("Provide either sub_type_name or sub_type_id, not both.")
+    if item_name and item_id is not None:
+        raise ConnectWiseError("Provide either item_name or item_id, not both.")
+    if team and team_id is not None:
+        raise ConnectWiseError("Provide either team or team_id, not both.")
 
     current_board = ticket.get("board") or {}
     board_record = (
@@ -267,8 +329,14 @@ async def _validate_ticket_classifications(
             "Could not determine the ticket's board for validation. Call get_ticket first or provide board_id or a valid board name."
         )
 
-    if status:
-        await _validate_ticket_status(client, board_id=resolved_board_id, board_name=board_name, status=status)
+    if status or status_id is not None:
+        await _validate_ticket_status(
+            client,
+            board_id=resolved_board_id,
+            board_name=board_name,
+            status=status,
+            status_id=status_id,
+        )
 
     teams = await client.get_board_teams(resolved_board_id)
     if team and _find_by_name(teams, team) is None:
@@ -277,16 +345,34 @@ async def _validate_ticket_classifications(
             f"Team '{team}' is not valid for board '{board_name}'. "
             f"Call get_board_lookup first. Valid teams: {', '.join(valid_names)}"
         )
+    if team_id is not None and _find_by_id(teams, team_id) is None:
+        valid_ids = _sorted_present_ids(teams)
+        raise ConnectWiseError(
+            f"team_id '{team_id}' is not valid for board '{board_name}'. "
+            f"Call get_board_lookup first. Valid team ids: {', '.join(valid_ids)}"
+        )
 
-    effective_type_name = type_name or (ticket.get("type") or {}).get("name")
-    effective_sub_type_name = sub_type_name or (ticket.get("subType") or {}).get("name")
+    current_type = ticket.get("type") or {}
+    current_sub_type = ticket.get("subType") or {}
+    effective_type_name = type_name or current_type.get("name")
+    effective_type_id = type_id if type_id is not None else current_type.get("id")
+    effective_sub_type_name = sub_type_name or current_sub_type.get("name")
+    effective_sub_type_id = sub_type_id if sub_type_id is not None else current_sub_type.get("id")
 
-    if not any([type_name, sub_type_name, item_name]):
+    if not any([type_name, type_id, sub_type_name, sub_type_id, item_name, item_id]):
         return
 
     board_types = await client.get_board_types(resolved_board_id)
     type_record = None
-    if effective_type_name:
+    if isinstance(effective_type_id, int):
+        type_record = _find_by_id(board_types, effective_type_id)
+        if type_record is None:
+            valid_ids = _sorted_present_ids(board_types)
+            raise ConnectWiseError(
+                f"type_id '{effective_type_id}' is not valid for board '{board_name}'. "
+                f"Call get_board_types first. Valid type ids: {', '.join(valid_ids)}"
+            )
+    elif effective_type_name:
         type_record = _find_by_name(board_types, effective_type_name)
         if type_record is None:
             valid_names = _sorted_present_strings(board_types)
@@ -294,14 +380,29 @@ async def _validate_ticket_classifications(
                 f"Type '{effective_type_name}' is not valid for board '{board_name}'. "
                 f"Call get_board_lookup first. Valid types: {', '.join(valid_names)}"
             )
-    elif sub_type_name or item_name:
+    elif sub_type_name or sub_type_id is not None or item_name or item_id is not None:
         raise ConnectWiseError(
-            "A valid type_name is required before setting sub_type_name or item_name. "
-            "Call get_board_lookup first to choose a matching hierarchy."
+            "A valid type_id or type_name is required before setting subtype or item. "
+            "Call get_ticket_type_hierarchy first and choose type, then subtype, then item."
         )
 
     subtype_record = None
-    if effective_sub_type_name:
+    effective_type_label = type_record.get("name") or type_record.get("id") if type_record else effective_type_name
+    if isinstance(effective_sub_type_id, int):
+        if type_record is None:
+            raise ConnectWiseError(
+                "Could not resolve the ticket type needed to validate sub_type_id. "
+                "Call get_ticket_type_hierarchy first and choose a valid type."
+            )
+        subtypes = await client.get_board_subtypes(resolved_board_id, type_record["id"])
+        subtype_record = _find_by_id(subtypes, effective_sub_type_id)
+        if subtype_record is None:
+            valid_ids = _sorted_present_ids(subtypes)
+            raise ConnectWiseError(
+                f"sub_type_id '{effective_sub_type_id}' is not valid for board '{board_name}' and type '{effective_type_label}'. "
+                f"Call get_board_subtypes first. Valid subtype ids: {', '.join(valid_ids)}"
+            )
+    elif effective_sub_type_name:
         if type_record is None:
             raise ConnectWiseError(
                 "Could not resolve the ticket type needed to validate sub_type_name. "
@@ -312,16 +413,32 @@ async def _validate_ticket_classifications(
         if subtype_record is None:
             valid_names = _sorted_present_strings(subtypes)
             raise ConnectWiseError(
-                f"Subtype '{effective_sub_type_name}' is not valid for board '{board_name}' and type '{effective_type_name}'. "
+                f"Subtype '{effective_sub_type_name}' is not valid for board '{board_name}' and type '{effective_type_label}'. "
                 f"Call get_board_lookup or get_board_subtypes first. Valid subtypes: {', '.join(valid_names)}"
             )
-    elif item_name:
+    elif item_name or item_id is not None:
         raise ConnectWiseError(
-            "A valid sub_type_name is required before setting item_name. "
-            "Call get_board_lookup first to choose a matching subtype and item."
+            "A valid sub_type_id or sub_type_name is required before setting item. "
+            "Call get_ticket_type_hierarchy first and choose type, then subtype, then item."
         )
 
-    if item_name:
+    effective_sub_type_label = (
+        subtype_record.get("name") or subtype_record.get("id") if subtype_record else effective_sub_type_name
+    )
+    if item_id is not None:
+        if type_record is None or subtype_record is None:
+            raise ConnectWiseError(
+                "Could not resolve the ticket type/subtype needed to validate item_id. "
+                "Call get_ticket_type_hierarchy first and choose a valid hierarchy."
+            )
+        items = await client.get_board_items(resolved_board_id, type_record["id"], subtype_record["id"])
+        if _find_by_id(items, item_id) is None:
+            valid_ids = _sorted_present_ids(items)
+            raise ConnectWiseError(
+                f"item_id '{item_id}' is not valid for board '{board_name}', type '{effective_type_label}', and subtype '{effective_sub_type_label}'. "
+                f"Call get_board_items first. Valid item ids: {', '.join(valid_ids)}"
+            )
+    elif item_name:
         if type_record is None or subtype_record is None:
             raise ConnectWiseError(
                 "Could not resolve the ticket type/subtype needed to validate item_name. "
@@ -331,7 +448,7 @@ async def _validate_ticket_classifications(
         if _find_by_name(items, item_name) is None:
             valid_names = _sorted_present_strings(items)
             raise ConnectWiseError(
-                f"Item '{item_name}' is not valid for board '{board_name}', type '{effective_type_name}', and subtype '{effective_sub_type_name}'. "
+                f"Item '{item_name}' is not valid for board '{board_name}', type '{effective_type_label}', and subtype '{effective_sub_type_label}'. "
                 f"Call get_board_lookup or get_board_items first. Valid items: {', '.join(valid_names)}"
             )
 
@@ -568,26 +685,33 @@ async def create_ticket(
     return {"ok": True, "data": ticket, "summary": _ticket_summary(ticket)}
 
 
-@mcp.tool(description="Update basic ticket text fields. Use this to change the ticket subject/summary and/or initial description. Requires ticket_id plus summary and/or initial_description. Summary updates patch the ticket. Initial description updates patch the oldest detail-description note, or create the first detail note when none exists.")
+@mcp.tool(description="Update basic ticket text fields. Use this to change the ticket subject/summary and/or initial description. Requires ticket_id plus summary, initial_description, or initial_description_lines. Use initial_description_lines when your MCP/automation client makes multi-line escaping awkward; lines are joined with newline characters. Summary updates patch the ticket. Initial description updates patch the oldest detail-description note, or create the first detail note when none exists.")
 async def update_ticket_details(
     ticket_id: int,
     summary: str | None = None,
     initial_description: str | None = None,
+    initial_description_lines: list[str] | None = None,
 ) -> dict[str, Any]:
     """Patch ticket subject/summary or initial description."""
 
     client = ConnectWiseClient()
+    initial_description_text = _compose_text_field(
+        "initial_description",
+        initial_description,
+        initial_description_lines,
+        required=False,
+    )
     result = await client.update_ticket_details(
         ticket_id,
         summary=summary,
-        initial_description=initial_description,
+        initial_description=initial_description_text,
     )
     return {
         "ok": True,
         "ticketId": ticket_id,
         "updated": {
             "summary": summary,
-            "initialDescription": initial_description,
+            "initialDescription": initial_description_text,
         },
         "data": result,
     }
@@ -617,22 +741,60 @@ async def update_ticket_status(ticket_id: int, status: str) -> dict[str, Any]:
     return {"ok": True, "data": result, "ticketId": ticket_id, "newStatus": status}
 
 
-@mcp.tool(description="Add a note to a ConnectWise service ticket. Use internal=true for internal-only notes. Use this when you already know the ticket id and only need to append a note, not change classifications or time entries.")
-async def add_ticket_note(ticket_id: int, text: str, internal: bool = True) -> dict[str, Any]:
+@mcp.tool(description="Add a note to a ConnectWise service ticket. Use internal=true for internal-only notes. Use text for a normal string, or text_lines when your MCP/automation client makes multi-line escaping awkward; text_lines is joined with newline characters. Use this when you already know the ticket id and only need to append a note, not change classifications or time entries.")
+async def add_ticket_note(
+    ticket_id: int,
+    text: str | None = None,
+    internal: bool = True,
+    text_lines: list[str] | None = None,
+) -> dict[str, Any]:
     """Add a note to a ticket and echo whether it was marked internal."""
 
     client = ConnectWiseClient()
-    result = await client.add_ticket_note(ticket_id, text=text, internal=internal)
+    note_text = _compose_text_field("text", text, text_lines)
+    result = await client.add_ticket_note(ticket_id, text=note_text or "", internal=internal)
     return {"ok": True, "data": result, "ticketId": ticket_id, "internal": internal}
+
+
+@mcp.tool(description="Update an existing ConnectWise ticket note. Use text for a normal string, or text_lines when your MCP/automation client makes multi-line escaping awkward; text_lines is joined with newline characters. Use internal to change the note's internal-only flag, or leave it omitted to only change the text.")
+async def update_ticket_note(
+    ticket_id: int,
+    note_id: int,
+    text: str | None = None,
+    internal: bool | None = None,
+    text_lines: list[str] | None = None,
+) -> dict[str, Any]:
+    """Update a ticket note's text and optionally its internal flag."""
+
+    client = ConnectWiseClient()
+    note_text = _compose_text_field("text", text, text_lines)
+    result = await client.update_ticket_note(ticket_id, note_id, text=note_text or "", internal=internal)
+    return {
+        "ok": True,
+        "data": result,
+        "ticketId": ticket_id,
+        "noteId": note_id,
+        "internal": internal,
+    }
+
+
+@mcp.tool(description="Delete an existing ConnectWise ticket note by note_id. Use get_ticket_notes first when you need to find the note id. This permanently removes the note from the ticket.")
+async def delete_ticket_note(ticket_id: int, note_id: int) -> dict[str, Any]:
+    """Delete a ticket note by id."""
+
+    client = ConnectWiseClient()
+    result = await client.delete_ticket_note(ticket_id, note_id)
+    return {"ok": True, "data": result, "ticketId": ticket_id, "noteId": note_id}
 
 
 MANAGED_INTERNAL_NOTE_KEY = "llm-ticket-summary"
 
 
-@mcp.tool(description="Create or update the one workflow-managed internal note on a ConnectWise ticket. Use this instead of add_ticket_note for LLM/workflow summaries that may run repeatedly on ticket updates. The stable note key is fixed by the server so LLM runs cannot accidentally create new managed notes by inventing different keys. The tool updates the existing managed note from the same API member, deletes duplicate managed internal notes from that member, or creates a new internal note if none exists.")
+@mcp.tool(description="Create or update the one workflow-managed internal note on a ConnectWise ticket. Use content for a normal string, or content_lines when your MCP/automation client makes multi-line escaping awkward; content_lines is joined with newline characters. Use this instead of add_ticket_note for LLM/workflow summaries that may run repeatedly on ticket updates. The stable note key is fixed by the server so LLM runs cannot accidentally create new managed notes by inventing different keys. The tool updates the existing managed note from the same API member, deletes duplicate managed internal notes from that member, or creates a new internal note if none exists.")
 async def upsert_managed_internal_note(
     ticket_id: int,
-    content: str,
+    content: str | None = None,
+    content_lines: list[str] | None = None,
 ) -> dict[str, Any]:
     """Idempotently create/update a workflow-managed internal note.
 
@@ -644,9 +806,10 @@ async def upsert_managed_internal_note(
 
     note_key = MANAGED_INTERNAL_NOTE_KEY
     client = ConnectWiseClient()
+    content_text = _compose_text_field("content", content, content_lines)
     marker = _managed_note_marker(note_key)
-    desired_text = _managed_note_text(note_key, content)
-    desired_plain = _normalize_note_text(content)
+    desired_text = _managed_note_text(note_key, content_text or "")
+    desired_plain = _normalize_note_text(content_text)
     desired_full = _normalize_note_text(desired_text)
 
     page_size = getattr(getattr(client, "settings", None), "cw_max_page_size", 100)
@@ -745,18 +908,23 @@ async def get_ticket_time_entries(
     }, entries, include_raw=include_raw)
 
 
-@mcp.tool(description="Update ticket classification fields like status, priority, priority_id, board, type, subtype, item, team, severity, impact, or source. Expects status, type_name, sub_type_name, item_name, team, severity, impact, and source as names. Board can be supplied as either exact board name via board or numeric board_id. Important hierarchy rule: item_name depends on sub_type_name, and sub_type_name depends on type_name. Recommended sequence: get_ticket, then get_board_lookup so the chosen values match the board hierarchy before calling this tool.")
+@mcp.tool(description="Safely update ticket classification fields. Required: ticket_id plus at least one field. Prefer ids where available: board_id, status_id, priority_id, type_id, sub_type_id, item_id, team_id. Fetch lookup data first when ids are unknown. Critical order for hierarchy: choose type, then subtype, then item.")
 async def update_ticket_classifications(
     ticket_id: int,
     status: str | None = None,
+    status_id: int | None = None,
     priority: str | None = None,
     priority_id: int | None = None,
     board: str | None = None,
     board_id: int | None = None,
     type_name: str | None = None,
+    type_id: int | None = None,
     sub_type_name: str | None = None,
+    sub_type_id: int | None = None,
     item_name: str | None = None,
+    item_id: int | None = None,
     team: str | None = None,
+    team_id: int | None = None,
     severity: str | None = None,
     impact: str | None = None,
     source: str | None = None,
@@ -770,11 +938,10 @@ async def update_ticket_classifications(
         Provide either ``board`` as an exact board name or ``board_id`` as the numeric board id
         when moving a ticket to a different board. Supplying ``board_id`` avoids an extra
         board-name lookup when the id is already known.
-        Use ``get_board_lookup`` to discover valid board-specific status, type, subtype,
-        item, and team names before patching. Classification lookup values other than
-        ``board_id`` are names, not ids. When
-        changing hierarchy fields, choose ``type_name`` first, then ``sub_type_name``,
-        then ``item_name``. Do not treat ``item_name`` as an independent board-wide value.
+        Use ``get_board_lookup`` or ``get_ticket_type_hierarchy`` to discover valid
+        board-specific status, type, subtype, item, and team ids before patching. When
+        changing hierarchy fields, choose ``type_id`` first, then ``sub_type_id``,
+        then ``item_id``. Do not treat ``item_id`` as an independent board-wide value.
 
     Returns:
         A tool response containing the requested field values and raw patch result.
@@ -788,22 +955,32 @@ async def update_ticket_classifications(
         board=board,
         board_id=board_id,
         status=status,
+        status_id=status_id,
         type_name=type_name,
+        type_id=type_id,
         sub_type_name=sub_type_name,
+        sub_type_id=sub_type_id,
         item_name=item_name,
+        item_id=item_id,
         team=team,
+        team_id=team_id,
     )
     result = await client.update_ticket_classifications(
         ticket_id,
         status=status,
+        status_id=status_id,
         priority=priority,
         priority_id=priority_id,
         board=board,
         board_id=board_id,
         type_name=type_name,
+        type_id=type_id,
         sub_type_name=sub_type_name,
+        sub_type_id=sub_type_id,
         item_name=item_name,
+        item_id=item_id,
         team=team,
+        team_id=team_id,
         severity=severity,
         impact=impact,
         source=source,
@@ -813,14 +990,19 @@ async def update_ticket_classifications(
         "ticketId": ticket_id,
         "updated": {
             "status": status,
+            "statusId": status_id,
             "priority": priority,
             "priorityId": priority_id,
             "board": board,
             "boardId": board_id,
             "type": type_name,
+            "typeId": type_id,
             "subType": sub_type_name,
+            "subTypeId": sub_type_id,
             "item": item_name,
+            "itemId": item_id,
             "team": team,
+            "teamId": team_id,
             "severity": severity,
             "impact": impact,
             "source": source,
@@ -829,18 +1011,23 @@ async def update_ticket_classifications(
     }
 
 
-@mcp.tool(description="Fast automation path for high-volume n8n-style ticket updates. Patches known classification values directly without get_ticket or lookup validation, so it usually makes exactly one ConnectWise PATCH call. Use only when workflow data already contains valid board/status/type/subtype/item/team/priority_id/severity/impact/source values. Board can be supplied as exact board name via board or numeric board_id. If validate=true, use update_ticket_classifications instead.")
+@mcp.tool(description="Fast unvalidated classification update. Required: ticket_id plus at least one field. Prefer ids: board_id, status_id, priority_id, type_id, sub_type_id, item_id, team_id. Use only when workflow data is already valid. Critical hierarchy order: type, then subtype, then item.")
 async def update_ticket_classifications_fast(
     ticket_id: int,
     status: str | None = None,
+    status_id: int | None = None,
     priority: str | None = None,
     priority_id: int | None = None,
     board: str | None = None,
     board_id: int | None = None,
     type_name: str | None = None,
+    type_id: int | None = None,
     sub_type_name: str | None = None,
+    sub_type_id: int | None = None,
     item_name: str | None = None,
+    item_id: int | None = None,
     team: str | None = None,
+    team_id: int | None = None,
     severity: str | None = None,
     impact: str | None = None,
     source: str | None = None,
@@ -861,14 +1048,19 @@ async def update_ticket_classifications_fast(
     result = await client.update_ticket_classifications(
         ticket_id,
         status=status,
+        status_id=status_id,
         priority=priority,
         priority_id=priority_id,
         board=board,
         board_id=board_id,
         type_name=type_name,
+        type_id=type_id,
         sub_type_name=sub_type_name,
+        sub_type_id=sub_type_id,
         item_name=item_name,
+        item_id=item_id,
         team=team,
+        team_id=team_id,
         severity=severity,
         impact=impact,
         source=source,
@@ -879,14 +1071,19 @@ async def update_ticket_classifications_fast(
         "validated": False,
         "updated": {
             "status": status,
+            "statusId": status_id,
             "priority": priority,
             "priorityId": priority_id,
             "board": board,
             "boardId": board_id,
             "type": type_name,
+            "typeId": type_id,
             "subType": sub_type_name,
+            "subTypeId": sub_type_id,
             "item": item_name,
+            "itemId": item_id,
             "team": team,
+            "teamId": team_id,
             "severity": severity,
             "impact": impact,
             "source": source,
@@ -895,13 +1092,16 @@ async def update_ticket_classifications_fast(
     }
 
 
-@mcp.tool(description="Update a ticket classification after choosing type, subtype, and item. Required inputs: ticket_id, board_id, type_name, sub_type_name, item_name. This makes one PATCH call. It does not check if the names are valid. For the correct order, first call get_ticket_type_hierarchy: choose type, then subtype, then item.")
+@mcp.tool(description="Fast hierarchy-only classification update. Required: ticket_id, board_id, and ids or names for type, subtype, and item. Prefer type_id, sub_type_id, item_id. First call get_ticket_type_hierarchy and choose in order: type, then subtype, then item.")
 async def update_ticket_type_hierarchy_fast(
     ticket_id: int,
     board_id: int,
-    type_name: str,
-    sub_type_name: str,
-    item_name: str,
+    type_name: str | None = None,
+    sub_type_name: str | None = None,
+    item_name: str | None = None,
+    type_id: int | None = None,
+    sub_type_id: int | None = None,
+    item_id: int | None = None,
 ) -> dict[str, Any]:
     """Patch only board/type/subtype/item without preflight reads.
 
@@ -911,12 +1111,21 @@ async def update_ticket_type_hierarchy_fast(
     """
 
     client = ConnectWiseClient()
+    if type_name is None and type_id is None:
+        raise ConnectWiseError("Provide type_id or type_name.")
+    if sub_type_name is None and sub_type_id is None:
+        raise ConnectWiseError("Provide sub_type_id or sub_type_name.")
+    if item_name is None and item_id is None:
+        raise ConnectWiseError("Provide item_id or item_name.")
     result = await client.update_ticket_classifications(
         ticket_id,
         board_id=board_id,
         type_name=type_name,
+        type_id=type_id,
         sub_type_name=sub_type_name,
+        sub_type_id=sub_type_id,
         item_name=item_name,
+        item_id=item_id,
     )
     return {
         "ok": True,
@@ -925,8 +1134,11 @@ async def update_ticket_type_hierarchy_fast(
         "updated": {
             "boardId": board_id,
             "type": type_name,
+            "typeId": type_id,
             "subType": sub_type_name,
+            "subTypeId": sub_type_id,
             "item": item_name,
+            "itemId": item_id,
         },
         "data": result,
     }
@@ -1032,7 +1244,7 @@ async def mark_ticket_schedule_entry_done(schedule_entry_id: int, done: bool = T
     return {"ok": True, "scheduleEntryId": schedule_entry_id, "done": done, "data": entry, "summary": _schedule_entry_summary(entry)}
 
 
-@mcp.tool(description="Add a time entry against a ConnectWise service ticket. Expects member_identifier as the exact ConnectWise member identifier string, not the numeric member id. work_type and work_role are exact names, not ids. location_id is an optional numeric location id. Recommended sequence: search_members, optional list_locations, list_work_types, list_work_roles, then add_ticket_time_entry. If time entry creation fails because of location restrictions, call list_locations and retry with an allowed location_id.")
+@mcp.tool(description="Add a time entry against a ConnectWise service ticket. Expects member_identifier as the exact ConnectWise member identifier string, not the numeric member id. work_type and work_role are exact names, not ids. location_id is an optional numeric location id. Use notes/internal_notes for normal strings, or notes_lines/internal_notes_lines when your MCP/automation client makes multi-line escaping awkward; lines are joined with newline characters. Recommended sequence: search_members, optional list_locations, list_work_types, list_work_roles, then add_ticket_time_entry. If time entry creation fails because of location restrictions, call list_locations and retry with an allowed location_id.")
 async def add_ticket_time_entry(
     ticket_id: int,
     member_identifier: str,
@@ -1046,6 +1258,8 @@ async def add_ticket_time_entry(
     work_role: str | None = None,
     notes: str | None = None,
     internal_notes: str | None = None,
+    notes_lines: list[str] | None = None,
+    internal_notes_lines: list[str] | None = None,
     email_resource_flag: bool = False,
     email_contact_flag: bool = False,
     email_cc_flag: bool = False,
@@ -1065,6 +1279,8 @@ async def add_ticket_time_entry(
         work_role: Optional work role name.
         notes: Optional customer-facing notes.
         internal_notes: Optional internal-only notes.
+        notes_lines: Optional customer-facing note lines, joined with newlines.
+        internal_notes_lines: Optional internal-only note lines, joined with newlines.
         email_resource_flag: Whether to email the resource.
         email_contact_flag: Whether to email the contact.
         email_cc_flag: Whether to email CC recipients.
@@ -1088,6 +1304,13 @@ async def add_ticket_time_entry(
         work_type=work_type,
         work_role=work_role,
     )
+    notes_text = _compose_text_field("notes", notes, notes_lines, required=False)
+    internal_notes_text = _compose_text_field(
+        "internal_notes",
+        internal_notes,
+        internal_notes_lines,
+        required=False,
+    )
     entry = await client.add_time_entry(
         ticket_id=ticket_id,
         member_identifier=member_identifier,
@@ -1099,8 +1322,8 @@ async def add_ticket_time_entry(
         billable_option=billable_option,
         work_type=work_type,
         work_role=work_role,
-        notes=notes,
-        internal_notes=internal_notes,
+        notes=notes_text,
+        internal_notes=internal_notes_text,
         email_resource_flag=email_resource_flag,
         email_contact_flag=email_contact_flag,
         email_cc_flag=email_cc_flag,

@@ -213,6 +213,22 @@ async def test_add_ticket_time_entry_rejects_invalid_location_id(fake_client: Fa
     assert fake_client.added_time_entry is None
 
 
+async def test_add_ticket_time_entry_accepts_formatted_note_lines(fake_client: FakeClient) -> None:
+    result = await tickets_module.add_ticket_time_entry(
+        ticket_id=12345,
+        member_identifier="helpdesk1",
+        time_start="2026-04-20T15:30:00Z",
+        actual_hours=0.25,
+        notes_lines=["Customer note:", "", "  Confirmed remote access works"],
+        internal_notes_lines=["Internal:", "", "  MFA reset completed"],
+    )
+
+    assert result["ok"] is True
+    assert fake_client.added_time_entry is not None
+    assert fake_client.added_time_entry["notes"] == "Customer note:\n\n  Confirmed remote access works"
+    assert fake_client.added_time_entry["internal_notes"] == "Internal:\n\n  MFA reset completed"
+
+
 async def test_update_ticket_classifications_accepts_board_id_without_board_lookup(
     fake_client: FakeClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -272,18 +288,48 @@ async def test_update_ticket_classifications_fast_skips_preflight_reads(
     assert fake_client.updated_classifications == {
         "ticket_id": 12345,
         "status": "In Progress",
+        "status_id": None,
         "priority": None,
         "priority_id": None,
         "board": None,
         "board_id": 12,
         "type_name": "Incident",
+        "type_id": None,
         "sub_type_name": None,
+        "sub_type_id": None,
         "item_name": None,
+        "item_id": None,
         "team": None,
+        "team_id": None,
         "severity": None,
         "impact": None,
         "source": None,
     }
+
+
+async def test_update_ticket_classifications_accepts_lookup_ids(fake_client: FakeClient) -> None:
+    result = await tickets_module.update_ticket_classifications(
+        12345,
+        board_id=12,
+        status_id=2,
+        type_id=3,
+        sub_type_id=9,
+        item_id=14,
+        team_id=4,
+    )
+
+    assert result["ok"] is True
+    assert result["updated"]["statusId"] == 2
+    assert result["updated"]["typeId"] == 3
+    assert result["updated"]["subTypeId"] == 9
+    assert result["updated"]["itemId"] == 14
+    assert result["updated"]["teamId"] == 4
+    assert fake_client.updated_classifications is not None
+    assert fake_client.updated_classifications["status_id"] == 2
+    assert fake_client.updated_classifications["type_id"] == 3
+    assert fake_client.updated_classifications["sub_type_id"] == 9
+    assert fake_client.updated_classifications["item_id"] == 14
+    assert fake_client.updated_classifications["team_id"] == 4
 
 
 async def test_update_ticket_type_hierarchy_fast_uses_single_patch_surface(
@@ -312,8 +358,11 @@ async def test_update_ticket_type_hierarchy_fast_uses_single_patch_surface(
     assert result["updated"] == {
         "boardId": 65,
         "type": "Incident",
+        "typeId": None,
         "subType": "Software",
+        "subTypeId": None,
         "item": "Fix/Restore",
+        "itemId": None,
     }
     assert fake_client.updated_classifications is not None
     assert fake_client.updated_classifications["ticket_id"] == 12345
@@ -401,6 +450,60 @@ async def test_get_ticket_schedule_entries_returns_summaries(fake_client: FakeCl
     ]
 
 
+async def test_add_ticket_note_accepts_formatted_lines(fake_client: FakeClient) -> None:
+    result = await tickets_module.add_ticket_note(
+        12345,
+        text_lines=[
+            "Ticket reviewed:",
+            "",
+            "  - preserved indentation",
+            "  - preserved spacing between words",
+        ],
+    )
+
+    expected_text = "Ticket reviewed:\n\n  - preserved indentation\n  - preserved spacing between words"
+    assert result["ok"] is True
+    assert fake_client.notes[0]["text"] == expected_text
+
+
+async def test_add_ticket_note_rejects_text_and_text_lines(fake_client: FakeClient) -> None:
+    with pytest.raises(ConnectWiseError, match="Provide either text or text_lines"):
+        await tickets_module.add_ticket_note(12345, text="one", text_lines=["two"])
+
+
+async def test_update_ticket_note_accepts_formatted_lines(fake_client: FakeClient) -> None:
+    fake_client.notes = [{"id": 77, "text": "Old", "internalAnalysisFlag": False}]
+
+    result = await tickets_module.update_ticket_note(
+        12345,
+        77,
+        text_lines=["Updated:", "", "  Keep leading spaces"],
+        internal=True,
+    )
+
+    assert result["ok"] is True
+    assert fake_client.notes[0]["text"] == "Updated:\n\n  Keep leading spaces"
+    assert fake_client.notes[0]["internalAnalysisFlag"] is True
+
+
+async def test_delete_ticket_note_removes_note(fake_client: FakeClient) -> None:
+    fake_client.notes = [
+        {"id": 77, "text": "Delete me", "internalAnalysisFlag": True},
+        {"id": 78, "text": "Keep me", "internalAnalysisFlag": True},
+    ]
+
+    result = await tickets_module.delete_ticket_note(12345, 77)
+
+    assert result == {
+        "ok": True,
+        "data": {"ok": True},
+        "ticketId": 12345,
+        "noteId": 77,
+    }
+    assert fake_client.deleted_note_ids == [77]
+    assert [note["id"] for note in fake_client.notes] == [78]
+
+
 async def test_upsert_managed_internal_note_creates_when_missing(fake_client: FakeClient) -> None:
     result = await tickets_module.upsert_managed_internal_note(
         12345,
@@ -412,6 +515,19 @@ async def test_upsert_managed_internal_note_creates_when_missing(fake_client: Fa
     assert fake_client.notes[0]["internalAnalysisFlag"] is True
     assert fake_client.notes[0]["text"].startswith("[cw-mcp-managed-note:llm-ticket-summary]")
     assert "Ticket summary content" in fake_client.notes[0]["text"]
+
+
+async def test_upsert_managed_internal_note_accepts_formatted_lines(fake_client: FakeClient) -> None:
+    result = await tickets_module.upsert_managed_internal_note(
+        12345,
+        content_lines=["Summary:", "", "  Step 1: checked VPN", "  Step 2: reset MFA"],
+    )
+
+    assert result["action"] == "created"
+    assert fake_client.notes[0]["text"] == (
+        "[cw-mcp-managed-note:llm-ticket-summary]\n\n"
+        "Summary:\n\n  Step 1: checked VPN\n  Step 2: reset MFA"
+    )
 
 
 async def test_upsert_managed_internal_note_updates_one_and_deletes_duplicates(fake_client: FakeClient) -> None:
