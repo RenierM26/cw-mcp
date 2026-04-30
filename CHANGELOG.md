@@ -15,9 +15,11 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 ### Changed
 
 - Ticket classification tool descriptions now emphasize lookup-first workflows, id-first updates, and the required type -> subtype -> item hierarchy order for smaller LLM workflows.
-- `update_ticket_classifications`, `update_ticket_classifications_fast`, and `update_ticket_type_hierarchy_fast` now accept lookup ids while retaining name-based inputs for compatibility.
+- `update_ticket_classifications`, `patch_ticket_classifications_unvalidated`, and `patch_ticket_type_hierarchy_unvalidated` now accept lookup ids while retaining name-based inputs for compatibility.
+- Renamed MCP tools for clearer small-model selection: `update_ticket_classifications_fast` to `patch_ticket_classifications_unvalidated`, `update_ticket_type_hierarchy_fast` to `patch_ticket_type_hierarchy_unvalidated`, `upsert_managed_internal_note` to `save_managed_internal_summary_note`, and `list_tickets_about_to_breach` to `list_sla_risk_tickets`.
 - Fixed board subtype lookups to use `/service/boards/{board_id}/typeSubTypeItemAssociations` and dedupe `subType` records, preventing broader board-level subtype results for some boards.
 - Added pagination for association-backed subtype and item lookups so large board/type hierarchies are not truncated.
+- `get_ticket_bundle` now derives `ticket.description` from the oldest `detailDescriptionFlag=true` note when direct ticket description fields are missing, and no longer falls back to `recordType`.
 - Verified live ConnectWise behavior for ticket search ordering and subtype lookup shapes against the 2026.4 SDK.
 
 ### Security

@@ -263,7 +263,7 @@ async def test_update_ticket_classifications_rejects_board_and_board_id(
     assert fake_client.updated_classifications is None
 
 
-async def test_update_ticket_classifications_fast_skips_preflight_reads(
+async def test_patch_ticket_classifications_unvalidated_skips_preflight_reads(
     fake_client: FakeClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -276,7 +276,7 @@ async def test_update_ticket_classifications_fast_skips_preflight_reads(
     monkeypatch.setattr(fake_client, "get_ticket", fail_get_ticket)
     monkeypatch.setattr(fake_client, "get_board_statuses", fail_statuses)
 
-    result = await tickets_module.update_ticket_classifications_fast(
+    result = await tickets_module.patch_ticket_classifications_unvalidated(
         12345,
         board_id=12,
         status="In Progress",
@@ -332,7 +332,7 @@ async def test_update_ticket_classifications_accepts_lookup_ids(fake_client: Fak
     assert fake_client.updated_classifications["team_id"] == 4
 
 
-async def test_update_ticket_type_hierarchy_fast_uses_single_patch_surface(
+async def test_patch_ticket_type_hierarchy_unvalidated_uses_single_patch_surface(
     fake_client: FakeClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -345,7 +345,7 @@ async def test_update_ticket_type_hierarchy_fast_uses_single_patch_surface(
     monkeypatch.setattr(fake_client, "get_ticket", fail_get_ticket)
     monkeypatch.setattr(fake_client, "list_boards", fail_list_boards)
 
-    result = await tickets_module.update_ticket_type_hierarchy_fast(
+    result = await tickets_module.patch_ticket_type_hierarchy_unvalidated(
         ticket_id=12345,
         board_id=65,
         type_name="Incident",
@@ -504,8 +504,8 @@ async def test_delete_ticket_note_removes_note(fake_client: FakeClient) -> None:
     assert [note["id"] for note in fake_client.notes] == [78]
 
 
-async def test_upsert_managed_internal_note_creates_when_missing(fake_client: FakeClient) -> None:
-    result = await tickets_module.upsert_managed_internal_note(
+async def test_save_managed_internal_summary_note_creates_when_missing(fake_client: FakeClient) -> None:
+    result = await tickets_module.save_managed_internal_summary_note(
         12345,
         "Ticket summary content",
     )
@@ -517,8 +517,8 @@ async def test_upsert_managed_internal_note_creates_when_missing(fake_client: Fa
     assert "Ticket summary content" in fake_client.notes[0]["text"]
 
 
-async def test_upsert_managed_internal_note_accepts_formatted_lines(fake_client: FakeClient) -> None:
-    result = await tickets_module.upsert_managed_internal_note(
+async def test_save_managed_internal_summary_note_accepts_formatted_lines(fake_client: FakeClient) -> None:
+    result = await tickets_module.save_managed_internal_summary_note(
         12345,
         content_lines=["Summary:", "", "  Step 1: checked VPN", "  Step 2: reset MFA"],
     )
@@ -530,7 +530,7 @@ async def test_upsert_managed_internal_note_accepts_formatted_lines(fake_client:
     )
 
 
-async def test_upsert_managed_internal_note_updates_one_and_deletes_duplicates(fake_client: FakeClient) -> None:
+async def test_save_managed_internal_summary_note_updates_one_and_deletes_duplicates(fake_client: FakeClient) -> None:
     marker = "[cw-mcp-managed-note:llm-ticket-summary]"
     fake_client.notes = [
         {"id": 1, "text": f"{marker}\n\nOld", "internalAnalysisFlag": True, "member": {"id": 192}},
@@ -538,7 +538,7 @@ async def test_upsert_managed_internal_note_updates_one_and_deletes_duplicates(f
         {"id": 3, "text": f"{marker}\n\nOther member", "internalAnalysisFlag": True, "member": {"id": 999}},
     ]
 
-    result = await tickets_module.upsert_managed_internal_note(
+    result = await tickets_module.save_managed_internal_summary_note(
         12345,
         "New content",
     )
@@ -557,13 +557,13 @@ async def test_upsert_managed_internal_note_updates_one_and_deletes_duplicates(f
     assert {note["id"] for note in fake_client.notes} == {1, 3}
 
 
-async def test_upsert_managed_internal_note_coalesces_exact_duplicate_content(fake_client: FakeClient) -> None:
+async def test_save_managed_internal_summary_note_coalesces_exact_duplicate_content(fake_client: FakeClient) -> None:
     fake_client.notes = [
         {"id": 1, "text": "Same summary", "internalAnalysisFlag": True, "member": {"id": 192}},
         {"id": 2, "text": "Same summary", "internalAnalysisFlag": True, "member": {"id": 192}},
     ]
 
-    result = await tickets_module.upsert_managed_internal_note(
+    result = await tickets_module.save_managed_internal_summary_note(
         12345,
         "Same summary",
     )

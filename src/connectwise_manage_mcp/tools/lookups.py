@@ -304,7 +304,7 @@ async def get_ticket_type_hierarchy(
             raw_payload["items"] = items
             result["subtypeId"] = subtype_id
             result["items"] = [_board_type_summary(item) for item in items]
-            result["nextStep"] = "choose type_id, sub_type_id, and item_id, then call update_ticket_type_hierarchy_fast"
+            result["nextStep"] = "choose type_id, sub_type_id, and item_id, then call patch_ticket_type_hierarchy_unvalidated"
 
     return _with_optional_raw(result, raw_payload, include_raw=include_raw)
 

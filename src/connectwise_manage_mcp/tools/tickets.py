@@ -54,6 +54,29 @@ def _note_summary(note: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _ticket_description(ticket: dict[str, Any], notes: list[dict[str, Any]]) -> str | None:
+    """Return the best available ticket description without inventing one."""
+
+    direct_description = ticket.get("initialDescription") or ticket.get("detailDescription")
+    if isinstance(direct_description, str) and direct_description:
+        return direct_description
+
+    detail_notes = [note for note in notes if note.get("detailDescriptionFlag")]
+    if not detail_notes:
+        return None
+
+    oldest_detail_note = sorted(
+        detail_notes,
+        key=lambda note: note.get("dateCreated") or note.get("_info", {}).get("dateEntered") or "",
+    )[0]
+    text = (
+        oldest_detail_note.get("text")
+        or oldest_detail_note.get("noteText")
+        or oldest_detail_note.get("detailDescription")
+    )
+    return text if isinstance(text, str) and text else None
+
+
 def _managed_note_marker(note_key: str) -> str:
     """Return the stable marker used to find an idempotent managed note."""
 
@@ -537,17 +560,11 @@ async def get_ticket_bundle(
     notes = await client.get_ticket_notes(ticket_id, page_size=notes_page_size)
     time_entries = await client.get_ticket_time_entries(ticket_id, page_size=time_entries_page_size)
 
-    description = (
-        ticket.get("initialDescription")
-        or ticket.get("detailDescription")
-        or ticket.get("recordType")
-    )
-
     return {
         "ok": True,
         "ticket": _with_optional_raw({
             "summary": _ticket_summary(ticket),
-            "description": description,
+            "description": _ticket_description(ticket, notes),
         }, ticket, include_raw=include_raw),
         "notes": _with_optional_raw({
             "count": len(notes),
@@ -602,7 +619,7 @@ async def search_tickets(
 
 
 @mcp.tool(description="List active tickets whose next SLA milestone (`Respond`, `Plan`, or `Resolve`) is due within the next `hours` window, default `4`. Use `board` for an exact board-name filter and `company` for a partial company-name filter. Returns near-breach tickets in `data`; set `include_overdue=true` to also return currently overdue active tickets in `overdue`. This is more efficient than broad raw ticket searches because it only fetches the fields needed for SLA risk checks.")
-async def list_tickets_about_to_breach(
+async def list_sla_risk_tickets(
     hours: int = 4,
     board: str | None = None,
     company: str | None = None,
@@ -790,8 +807,8 @@ async def delete_ticket_note(ticket_id: int, note_id: int) -> dict[str, Any]:
 MANAGED_INTERNAL_NOTE_KEY = "llm-ticket-summary"
 
 
-@mcp.tool(description="Create or update the one workflow-managed internal note on a ConnectWise ticket. Use content for a normal string, or content_lines when your MCP/automation client makes multi-line escaping awkward; content_lines is joined with newline characters. Use this instead of add_ticket_note for LLM/workflow summaries that may run repeatedly on ticket updates. The stable note key is fixed by the server so LLM runs cannot accidentally create new managed notes by inventing different keys. The tool updates the existing managed note from the same API member, deletes duplicate managed internal notes from that member, or creates a new internal note if none exists.")
-async def upsert_managed_internal_note(
+@mcp.tool(description="Save the workflow-managed internal summary note on a ticket. Required: ticket_id and content or content_lines. Use this for repeat LLM summaries instead of add_ticket_note. Prevents duplicate managed notes.")
+async def save_managed_internal_summary_note(
     ticket_id: int,
     content: str | None = None,
     content_lines: list[str] | None = None,
@@ -1011,8 +1028,8 @@ async def update_ticket_classifications(
     }
 
 
-@mcp.tool(description="Fast unvalidated classification update. Required: ticket_id plus at least one field. Prefer ids: board_id, status_id, priority_id, type_id, sub_type_id, item_id, team_id. Use only when workflow data is already valid. Critical hierarchy order: type, then subtype, then item.")
-async def update_ticket_classifications_fast(
+@mcp.tool(description="Unvalidated classification patch. Required: ticket_id plus at least one field. Prefer ids: board_id, status_id, priority_id, type_id, sub_type_id, item_id, team_id. Use only when workflow data is already valid. Critical hierarchy order: type, then subtype, then item.")
+async def patch_ticket_classifications_unvalidated(
     ticket_id: int,
     status: str | None = None,
     status_id: int | None = None,
@@ -1092,8 +1109,8 @@ async def update_ticket_classifications_fast(
     }
 
 
-@mcp.tool(description="Fast hierarchy-only classification update. Required: ticket_id, board_id, and ids or names for type, subtype, and item. Prefer type_id, sub_type_id, item_id. First call get_ticket_type_hierarchy and choose in order: type, then subtype, then item.")
-async def update_ticket_type_hierarchy_fast(
+@mcp.tool(description="Unvalidated hierarchy-only classification patch. Required: ticket_id, board_id, and ids or names for type, subtype, and item. Prefer type_id, sub_type_id, item_id. First call get_ticket_type_hierarchy and choose in order: type, then subtype, then item.")
+async def patch_ticket_type_hierarchy_unvalidated(
     ticket_id: int,
     board_id: int,
     type_name: str | None = None,
