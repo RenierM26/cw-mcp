@@ -6,6 +6,8 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-03
+
 ### Added
 
 - Added `update_ticket_note` and `delete_ticket_note` MCP tools for direct ticket-note management.
