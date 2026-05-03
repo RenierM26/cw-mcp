@@ -6,6 +6,12 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Security
+
 ## [0.3.0] - 2026-05-03
 
 ### Added
