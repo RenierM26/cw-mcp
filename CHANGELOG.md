@@ -8,6 +8,14 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ### Added
 
+### Changed
+
+### Security
+
+## [0.3.0] - 2026-05-03
+
+### Added
+
 - Added `update_ticket_note` and `delete_ticket_note` MCP tools for direct ticket-note management.
 - Added `text_lines`, `content_lines`, `initial_description_lines`, `notes_lines`, and `internal_notes_lines` inputs so MCP/automation clients can send formatted multi-line note text without fragile escaped newline strings.
 - Added `text_blocks`, `content_blocks`, `initial_description_blocks`, `notes_blocks`, and `internal_notes_blocks` inputs for paragraph notes that need blank lines without empty string array items.
