@@ -129,7 +129,7 @@ def _configuration_match_score(configuration: dict[str, Any], usernames: list[st
         "deviceIdentifier": configuration.get("deviceIdentifier"),
         "name": configuration.get("name"),
     }
-    best = {"score": 0.0, "matchedUsername": None, "matchedField": None, "matchedValue": None}
+    best: dict[str, Any] = {"score": 0.0, "matchedUsername": None, "matchedField": None, "matchedValue": None}
     for username in usernames:
         clean_username = _clean_match_value(username)
         if not clean_username:
