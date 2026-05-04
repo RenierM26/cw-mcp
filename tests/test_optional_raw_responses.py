@@ -75,6 +75,9 @@ class FakeClient:
     async def get_ticket_configurations(self, ticket_id: int, **kwargs: Any) -> list[dict[str, Any]]:
         return [{"id": 77, "deviceIdentifier": "LAPTOP-77"}]
 
+    async def add_ticket_configuration(self, ticket_id: int, **kwargs: Any) -> dict[str, Any]:
+        return {"id": kwargs["configuration_id"], "deviceIdentifier": kwargs.get("device_identifier")}
+
     async def get_company_configuration(self, configuration_id: int) -> dict[str, Any]:
         return {
             "id": configuration_id,
@@ -333,3 +336,21 @@ async def test_suggest_company_configuration_derives_username_from_ticket_contac
     assert "jane.smith@example.com" in result["usernameCandidates"]
     assert "jane.smith" in result["usernameCandidates"]
     assert result["suggestion"]["id"] == 77
+
+
+async def test_attach_ticket_configuration_returns_read_back_confirmation(
+    fake_client: FakeClient,
+) -> None:
+    result = await tickets_module.attach_ticket_configuration(
+        ticket_id=12345,
+        configuration_id=77,
+        device_identifier="LAPTOP-77",
+    )
+
+    assert result["ok"] is True
+    assert result["ticketId"] == 12345
+    assert result["configurationId"] == 77
+    assert result["attached"] is True
+    assert result["data"] == {"id": 77, "deviceIdentifier": "LAPTOP-77"}
+    assert result["attachedReferences"] == [{"id": 77, "deviceIdentifier": "LAPTOP-77"}]
+    assert "raw" not in result

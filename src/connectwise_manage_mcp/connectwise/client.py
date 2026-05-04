@@ -542,6 +542,24 @@ class ConnectWiseClient:
             path=f"/service/tickets/{ticket_id}/configurations",
         )
 
+    async def add_ticket_configuration(
+        self,
+        ticket_id: int,
+        *,
+        configuration_id: int,
+        device_identifier: str | None = None,
+    ) -> dict[str, Any]:
+        """Attach a company configuration reference to a service ticket."""
+
+        payload: dict[str, Any] = {"id": configuration_id}
+        if device_identifier:
+            payload["deviceIdentifier"] = device_identifier
+        return await self._request(
+            "POST",
+            f"/service/tickets/{ticket_id}/configurations",
+            json=payload,
+        )
+
     async def get_company_configuration(self, configuration_id: int) -> dict[str, Any]:
         """Fetch one company configuration by numeric identifier."""
 

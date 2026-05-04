@@ -231,6 +231,27 @@ async def test_get_ticket_configurations_calls_service_ticket_endpoint(
     assert calls[0]["params"] == {"page": 2, "pageSize": 100}
 
 
+async def test_add_ticket_configuration_posts_configuration_reference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(201, json_data={"id": 77, "deviceIdentifier": "LAPTOP-77"}),
+    )
+
+    client = ConnectWiseClient()
+    result = await client.add_ticket_configuration(
+        12345,
+        configuration_id=77,
+        device_identifier="LAPTOP-77",
+    )
+
+    assert result == {"id": 77, "deviceIdentifier": "LAPTOP-77"}
+    assert calls[0]["method"] == "POST"
+    assert calls[0]["url"].endswith("/service/tickets/12345/configurations")
+    assert calls[0]["json"] == {"id": 77, "deviceIdentifier": "LAPTOP-77"}
+
+
 async def test_search_company_configurations_builds_username_conditions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -815,6 +815,36 @@ async def suggest_company_configuration_for_username(
         "data": scored,
     }, configurations, include_raw=include_raw)
 
+
+@mcp.tool(description="Attach a company configuration item to a ConnectWise service ticket. Required: ticket_id and configuration_id. Optional: device_identifier from the suggested/lookup configuration. Use get_ticket_configuration_lookup or suggest_company_configuration_for_username first.")
+async def attach_ticket_configuration(
+    ticket_id: int,
+    configuration_id: int,
+    device_identifier: str | None = None,
+    include_raw: bool = False,
+) -> dict[str, Any]:
+    """Attach a configuration reference to a ticket and read back ticket attachments."""
+
+    client = ConnectWiseClient()
+    result = await client.add_ticket_configuration(
+        ticket_id,
+        configuration_id=configuration_id,
+        device_identifier=device_identifier,
+    )
+    attached_refs = await client.get_ticket_configurations(ticket_id)
+    attached_ids = [reference.get("id") for reference in attached_refs]
+    attached = configuration_id in attached_ids
+    return _with_optional_raw({
+        "ok": True,
+        "ticketId": ticket_id,
+        "configurationId": configuration_id,
+        "deviceIdentifier": device_identifier,
+        "attached": attached,
+        "data": _configuration_reference_summary(result),
+        "attachedReferences": [_configuration_reference_summary(reference) for reference in attached_refs],
+    }, {"created": result, "attachedReferences": attached_refs}, include_raw=include_raw)
+
+
 @mcp.tool(description="Search ConnectWise service tickets with simple business-facing filters like board, status, company, or summary text. Use this when you do not know the numeric ticket id yet.")
 async def search_tickets(
     board: str | None = None,
