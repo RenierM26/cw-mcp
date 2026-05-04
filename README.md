@@ -136,11 +136,11 @@ ConnectWise write calls mix numeric ids and human-readable names. This is the ea
 - `board_id`, `type_id`, and `subtype_id` are numeric ids used by lookup tools
 - `board` in `create_ticket` is a board name, not a board id
 - `status` in `update_ticket_status` is a board-specific status name, not a status id
-- prefer ids in `update_ticket_classifications` when known: `board_id`, `status_id`, `priority_id`, `type_id`, `sub_type_id`, `item_id`, and `team_id`
+- prefer ids in `update_ticket_classifications` when known: `board_id`, `status_id`, `priority_id`, `type_id`, `subtype_id`, `item_id`, and `team_id`
 - name fields are still accepted for compatibility: `board`, `status`, `type_name`, `sub_type_name`, `item_name`, `team`, `severity`, `impact`, and `source`
-- lookup tools use `subtype_id`; update tools use `sub_type_id`
-- `type_id`, `sub_type_id`, and `item_id` are a hierarchy, not three independent fields
-- choose `type_id` first, then `sub_type_id`, then `item_id`
+- lookup tools use `subtype_id`; update tools use `subtype_id`
+- `type_id`, `subtype_id`, and `item_id` are a hierarchy, not three independent fields
+- choose `type_id` first, then `subtype_id`, then `item_id`
 - `member_identifier` in `add_ticket_time_entry` is a string identifier, not the numeric member id
 - `location_id` in `add_ticket_time_entry` is a numeric location id
 - `work_type` and `work_role` in `add_ticket_time_entry` are names, not ids
@@ -579,7 +579,7 @@ Example `save_managed_internal_summary_note` arguments:
   "ticket_id": 12345,
   "content_blocks": [
     "LLM classification summary:",
-    "Classification applied: type_id=3, sub_type_id=9, item_id=14.\nStatus changed: status_id=2.",
+    "Classification applied: type_id=3, subtype_id=9, item_id=14.\nStatus changed: status_id=2.",
     "Reasoning: Notes and initial description indicate a remote-access VPN incident."
   ]
 }
@@ -676,7 +676,7 @@ Tool call arguments:
   "board_id": 12,
   "status_id": 2,
   "type_id": 3,
-  "sub_type_id": 9,
+  "subtype_id": 9,
   "item_id": 14,
   "priority_id": 7
 }

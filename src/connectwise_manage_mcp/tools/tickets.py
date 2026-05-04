@@ -122,6 +122,7 @@ def _compose_text_field(
     return value
 
 
+
 def _normalize_note_text(value: str | None) -> str:
     """Normalize note text for duplicate detection."""
 
@@ -327,7 +328,7 @@ async def _validate_ticket_classifications(
     type_name: str | None,
     type_id: int | None,
     sub_type_name: str | None,
-    sub_type_id: int | None,
+    subtype_id: int | None,
     item_name: str | None,
     item_id: int | None,
     team: str | None,
@@ -341,8 +342,8 @@ async def _validate_ticket_classifications(
         raise ConnectWiseError("Provide either status or status_id, not both.")
     if type_name and type_id is not None:
         raise ConnectWiseError("Provide either type_name or type_id, not both.")
-    if sub_type_name and sub_type_id is not None:
-        raise ConnectWiseError("Provide either sub_type_name or sub_type_id, not both.")
+    if sub_type_name and subtype_id is not None:
+        raise ConnectWiseError("Provide either sub_type_name or subtype_id, not both.")
     if item_name and item_id is not None:
         raise ConnectWiseError("Provide either item_name or item_id, not both.")
     if team and team_id is not None:
@@ -392,9 +393,9 @@ async def _validate_ticket_classifications(
     effective_type_name = type_name or current_type.get("name")
     effective_type_id = type_id if type_id is not None else current_type.get("id")
     effective_sub_type_name = sub_type_name or current_sub_type.get("name")
-    effective_sub_type_id = sub_type_id if sub_type_id is not None else current_sub_type.get("id")
+    effective_subtype_id = subtype_id if subtype_id is not None else current_sub_type.get("id")
 
-    if not any([type_name, type_id, sub_type_name, sub_type_id, item_name, item_id]):
+    if not any([type_name, type_id, sub_type_name, subtype_id, item_name, item_id]):
         return
 
     board_types = await client.get_board_types(resolved_board_id)
@@ -415,7 +416,7 @@ async def _validate_ticket_classifications(
                 f"Type '{effective_type_name}' is not valid for board '{board_name}'. "
                 f"Call get_board_lookup first. Valid types: {', '.join(valid_names)}"
             )
-    elif sub_type_name or sub_type_id is not None or item_name or item_id is not None:
+    elif sub_type_name or subtype_id is not None or item_name or item_id is not None:
         raise ConnectWiseError(
             "A valid type_id or type_name is required before setting subtype or item. "
             "Call get_ticket_type_hierarchy first and choose type, then subtype, then item."
@@ -423,18 +424,18 @@ async def _validate_ticket_classifications(
 
     subtype_record = None
     effective_type_label = type_record.get("name") or type_record.get("id") if type_record else effective_type_name
-    if isinstance(effective_sub_type_id, int):
+    if isinstance(effective_subtype_id, int):
         if type_record is None:
             raise ConnectWiseError(
-                "Could not resolve the ticket type needed to validate sub_type_id. "
+                "Could not resolve the ticket type needed to validate subtype_id. "
                 "Call get_ticket_type_hierarchy first and choose a valid type."
             )
         subtypes = await client.get_board_subtypes(resolved_board_id, type_record["id"])
-        subtype_record = _find_by_id(subtypes, effective_sub_type_id)
+        subtype_record = _find_by_id(subtypes, effective_subtype_id)
         if subtype_record is None:
             valid_ids = _sorted_present_ids(subtypes)
             raise ConnectWiseError(
-                f"sub_type_id '{effective_sub_type_id}' is not valid for board '{board_name}' and type '{effective_type_label}'. "
+                f"subtype_id '{effective_subtype_id}' is not valid for board '{board_name}' and type '{effective_type_label}'. "
                 f"Call get_board_subtypes first. Valid subtype ids: {', '.join(valid_ids)}"
             )
     elif effective_sub_type_name:
@@ -453,7 +454,7 @@ async def _validate_ticket_classifications(
             )
     elif item_name or item_id is not None:
         raise ConnectWiseError(
-            "A valid sub_type_id or sub_type_name is required before setting item. "
+            "A valid subtype_id or sub_type_name is required before setting item. "
             "Call get_ticket_type_hierarchy first and choose type, then subtype, then item."
         )
 
@@ -942,7 +943,7 @@ async def get_ticket_time_entries(
     }, entries, include_raw=include_raw)
 
 
-@mcp.tool(description="Safely update ticket classification fields. Required: ticket_id plus at least one field. Prefer ids where available: board_id, status_id, priority_id, type_id, sub_type_id, item_id, team_id. Fetch lookup data first when ids are unknown. Critical order for hierarchy: choose type, then subtype, then item.")
+@mcp.tool(description="Safely update ticket classification fields. Required: ticket_id plus at least one field. Prefer ids where available: board_id, status_id, priority_id, type_id, subtype_id, item_id, team_id. Fetch lookup data first when ids are unknown. Critical order for hierarchy: choose type, then subtype, then item.")
 async def update_ticket_classifications(
     ticket_id: int,
     status: str | None = None,
@@ -954,7 +955,7 @@ async def update_ticket_classifications(
     type_name: str | None = None,
     type_id: int | None = None,
     sub_type_name: str | None = None,
-    sub_type_id: int | None = None,
+    subtype_id: int | None = None,
     item_name: str | None = None,
     item_id: int | None = None,
     team: str | None = None,
@@ -974,7 +975,7 @@ async def update_ticket_classifications(
         board-name lookup when the id is already known.
         Use ``get_board_lookup`` or ``get_ticket_type_hierarchy`` to discover valid
         board-specific status, type, subtype, item, and team ids before patching. When
-        changing hierarchy fields, choose ``type_id`` first, then ``sub_type_id``,
+        changing hierarchy fields, choose ``type_id`` first, then ``subtype_id``,
         then ``item_id``. Do not treat ``item_id`` as an independent board-wide value.
 
     Returns:
@@ -993,7 +994,7 @@ async def update_ticket_classifications(
         type_name=type_name,
         type_id=type_id,
         sub_type_name=sub_type_name,
-        sub_type_id=sub_type_id,
+        subtype_id=subtype_id,
         item_name=item_name,
         item_id=item_id,
         team=team,
@@ -1010,7 +1011,7 @@ async def update_ticket_classifications(
         type_name=type_name,
         type_id=type_id,
         sub_type_name=sub_type_name,
-        sub_type_id=sub_type_id,
+        subtype_id=subtype_id,
         item_name=item_name,
         item_id=item_id,
         team=team,
@@ -1032,7 +1033,7 @@ async def update_ticket_classifications(
             "type": type_name,
             "typeId": type_id,
             "subType": sub_type_name,
-            "subTypeId": sub_type_id,
+            "subTypeId": subtype_id,
             "item": item_name,
             "itemId": item_id,
             "team": team,
@@ -1045,7 +1046,7 @@ async def update_ticket_classifications(
     }
 
 
-@mcp.tool(description="Unvalidated classification patch. Required: ticket_id plus at least one field. Prefer ids: board_id, status_id, priority_id, type_id, sub_type_id, item_id, team_id. Use only when workflow data is already valid. Critical hierarchy order: type, then subtype, then item.")
+@mcp.tool(description="Unvalidated classification patch. Required: ticket_id plus at least one field. Prefer ids: board_id, status_id, priority_id, type_id, subtype_id, item_id, team_id. Use only when workflow data is already valid. Critical hierarchy order: type, then subtype, then item.")
 async def patch_ticket_classifications_unvalidated(
     ticket_id: int,
     status: str | None = None,
@@ -1057,7 +1058,7 @@ async def patch_ticket_classifications_unvalidated(
     type_name: str | None = None,
     type_id: int | None = None,
     sub_type_name: str | None = None,
-    sub_type_id: int | None = None,
+    subtype_id: int | None = None,
     item_name: str | None = None,
     item_id: int | None = None,
     team: str | None = None,
@@ -1090,7 +1091,7 @@ async def patch_ticket_classifications_unvalidated(
         type_name=type_name,
         type_id=type_id,
         sub_type_name=sub_type_name,
-        sub_type_id=sub_type_id,
+        subtype_id=subtype_id,
         item_name=item_name,
         item_id=item_id,
         team=team,
@@ -1113,7 +1114,7 @@ async def patch_ticket_classifications_unvalidated(
             "type": type_name,
             "typeId": type_id,
             "subType": sub_type_name,
-            "subTypeId": sub_type_id,
+            "subTypeId": subtype_id,
             "item": item_name,
             "itemId": item_id,
             "team": team,
@@ -1126,7 +1127,7 @@ async def patch_ticket_classifications_unvalidated(
     }
 
 
-@mcp.tool(description="Unvalidated hierarchy-only classification patch. Required: ticket_id, board_id, and ids or names for type, subtype, and item. Prefer type_id, sub_type_id, item_id. First call get_ticket_type_hierarchy and choose in order: type, then subtype, then item.")
+@mcp.tool(description="Unvalidated hierarchy-only classification patch. Required: ticket_id, board_id, and ids or names for type, subtype, and item. Prefer type_id, subtype_id, item_id. First call get_ticket_type_hierarchy and choose in order: type, then subtype, then item.")
 async def patch_ticket_type_hierarchy_unvalidated(
     ticket_id: int,
     board_id: int,
@@ -1134,7 +1135,7 @@ async def patch_ticket_type_hierarchy_unvalidated(
     sub_type_name: str | None = None,
     item_name: str | None = None,
     type_id: int | None = None,
-    sub_type_id: int | None = None,
+    subtype_id: int | None = None,
     item_id: int | None = None,
 ) -> dict[str, Any]:
     """Patch only board/type/subtype/item without preflight reads.
@@ -1147,8 +1148,8 @@ async def patch_ticket_type_hierarchy_unvalidated(
     client = ConnectWiseClient()
     if type_name is None and type_id is None:
         raise ConnectWiseError("Provide type_id or type_name.")
-    if sub_type_name is None and sub_type_id is None:
-        raise ConnectWiseError("Provide sub_type_id or sub_type_name.")
+    if sub_type_name is None and subtype_id is None:
+        raise ConnectWiseError("Provide subtype_id or sub_type_name.")
     if item_name is None and item_id is None:
         raise ConnectWiseError("Provide item_id or item_name.")
     result = await client.update_ticket_classifications(
@@ -1157,7 +1158,7 @@ async def patch_ticket_type_hierarchy_unvalidated(
         type_name=type_name,
         type_id=type_id,
         sub_type_name=sub_type_name,
-        sub_type_id=sub_type_id,
+        subtype_id=subtype_id,
         item_name=item_name,
         item_id=item_id,
     )
@@ -1170,7 +1171,7 @@ async def patch_ticket_type_hierarchy_unvalidated(
             "type": type_name,
             "typeId": type_id,
             "subType": sub_type_name,
-            "subTypeId": sub_type_id,
+            "subTypeId": subtype_id,
             "item": item_name,
             "itemId": item_id,
         },

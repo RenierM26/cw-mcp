@@ -368,7 +368,7 @@ class ConnectWiseClient:
         type_name: str | None = None,
         type_id: int | None = None,
         sub_type_name: str | None = None,
-        sub_type_id: int | None = None,
+        subtype_id: int | None = None,
         item_name: str | None = None,
         item_id: int | None = None,
         team: str | None = None,
@@ -390,7 +390,7 @@ class ConnectWiseClient:
             type_name: Optional ticket type name.
             type_id: Optional numeric ticket type id.
             sub_type_name: Optional ticket subtype name.
-            sub_type_id: Optional numeric ticket subtype id.
+            subtype_id: Optional numeric ticket subtype id.
             item_name: Optional ticket item name.
             item_id: Optional numeric ticket item id.
             team: Optional team name.
@@ -414,8 +414,8 @@ class ConnectWiseClient:
             raise ConnectWiseError("Provide either priority or priority_id, not both.")
         if type_name and type_id is not None:
             raise ConnectWiseError("Provide either type_name or type_id, not both.")
-        if sub_type_name and sub_type_id is not None:
-            raise ConnectWiseError("Provide either sub_type_name or sub_type_id, not both.")
+        if sub_type_name and subtype_id is not None:
+            raise ConnectWiseError("Provide either sub_type_name or subtype_id, not both.")
         if item_name and item_id is not None:
             raise ConnectWiseError("Provide either item_name or item_id, not both.")
         if team and team_id is not None:
@@ -446,8 +446,8 @@ class ConnectWiseClient:
             add_replace("type", {"id": type_id})
         if sub_type_name:
             add_replace("subType", {"name": sub_type_name})
-        if sub_type_id is not None:
-            add_replace("subType", {"id": sub_type_id})
+        if subtype_id is not None:
+            add_replace("subType", {"id": subtype_id})
         if item_name:
             add_replace("item", {"name": item_name})
         if item_id is not None:
