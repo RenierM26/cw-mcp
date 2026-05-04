@@ -231,7 +231,7 @@ async def get_board_types(board_id: int, include_raw: bool = False) -> dict[str,
     }, board_types, include_raw=include_raw)
 
 
-@mcp.tool(description="Classification step 2. Required: board_id and chosen type_id. Returns sub_type_id values and names. Choose subtype before asking for items.")
+@mcp.tool(description="Classification step 2. Required: board_id and chosen type_id. Returns subtype_id values and names. Choose subtype before asking for items.")
 async def get_board_subtypes(board_id: int, type_id: int, include_raw: bool = False) -> dict[str, Any]:
     """Fetch board subtypes for a specific board type."""
 
@@ -304,7 +304,7 @@ async def get_ticket_type_hierarchy(
             raw_payload["items"] = items
             result["subtypeId"] = subtype_id
             result["items"] = [_board_type_summary(item) for item in items]
-            result["nextStep"] = "choose type_id, sub_type_id, and item_id, then call patch_ticket_type_hierarchy_unvalidated"
+            result["nextStep"] = "choose type_id, subtype_id, and item_id, then call patch_ticket_type_hierarchy_unvalidated"
 
     return _with_optional_raw(result, raw_payload, include_raw=include_raw)
 

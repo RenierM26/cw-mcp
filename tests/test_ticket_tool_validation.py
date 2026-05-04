@@ -314,7 +314,7 @@ async def test_patch_ticket_classifications_unvalidated_skips_preflight_reads(
         "type_name": "Incident",
         "type_id": None,
         "sub_type_name": None,
-        "sub_type_id": None,
+        "subtype_id": None,
         "item_name": None,
         "item_id": None,
         "team": None,
@@ -331,7 +331,7 @@ async def test_update_ticket_classifications_accepts_lookup_ids(fake_client: Fak
         board_id=12,
         status_id=2,
         type_id=3,
-        sub_type_id=9,
+        subtype_id=9,
         item_id=14,
         team_id=4,
     )
@@ -345,9 +345,24 @@ async def test_update_ticket_classifications_accepts_lookup_ids(fake_client: Fak
     assert fake_client.updated_classifications is not None
     assert fake_client.updated_classifications["status_id"] == 2
     assert fake_client.updated_classifications["type_id"] == 3
-    assert fake_client.updated_classifications["sub_type_id"] == 9
+    assert fake_client.updated_classifications["subtype_id"] == 9
     assert fake_client.updated_classifications["item_id"] == 14
     assert fake_client.updated_classifications["team_id"] == 4
+
+
+async def test_update_ticket_classifications_accepts_subtype_id(fake_client: FakeClient) -> None:
+    result = await tickets_module.update_ticket_classifications(
+        12345,
+        board_id=12,
+        type_id=3,
+        subtype_id=9,
+        item_id=14,
+    )
+
+    assert result["ok"] is True
+    assert result["updated"]["subTypeId"] == 9
+    assert fake_client.updated_classifications is not None
+    assert fake_client.updated_classifications["subtype_id"] == 9
 
 
 async def test_patch_ticket_type_hierarchy_unvalidated_uses_single_patch_surface(
@@ -388,6 +403,23 @@ async def test_patch_ticket_type_hierarchy_unvalidated_uses_single_patch_surface
     assert fake_client.updated_classifications["type_name"] == "Incident"
     assert fake_client.updated_classifications["sub_type_name"] == "Software"
     assert fake_client.updated_classifications["item_name"] == "Fix/Restore"
+
+
+async def test_patch_ticket_type_hierarchy_unvalidated_accepts_subtype_id(
+    fake_client: FakeClient,
+) -> None:
+    result = await tickets_module.patch_ticket_type_hierarchy_unvalidated(
+        ticket_id=12345,
+        board_id=65,
+        type_id=3,
+        subtype_id=9,
+        item_id=14,
+    )
+
+    assert result["ok"] is True
+    assert result["updated"]["subTypeId"] == 9
+    assert fake_client.updated_classifications is not None
+    assert fake_client.updated_classifications["subtype_id"] == 9
 
 
 async def test_update_ticket_details_tool_updates_summary(fake_client: FakeClient) -> None:

@@ -606,7 +606,7 @@ async def test_update_ticket_classifications_prefers_lookup_ids(monkeypatch: pyt
         12345,
         status_id=2,
         type_id=3,
-        sub_type_id=9,
+        subtype_id=9,
         item_id=14,
         team_id=4,
     )
