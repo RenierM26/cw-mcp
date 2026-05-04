@@ -518,6 +518,81 @@ class ConnectWiseClient:
         return await self._request("GET", f"/service/tickets/{ticket_id}/notes", params=params)
 
 
+    async def get_ticket_configurations(
+        self,
+        ticket_id: int,
+        *,
+        page: int = 1,
+        page_size: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return configuration references attached to a service ticket."""
+
+        params = {
+            "page": page,
+            "pageSize": self._bounded_page_size(page_size),
+        }
+        payload = await self._request(
+            "GET",
+            f"/service/tickets/{ticket_id}/configurations",
+            params=params,
+        )
+        return self._expect_list_response(
+            payload,
+            method="GET",
+            path=f"/service/tickets/{ticket_id}/configurations",
+        )
+
+    async def get_company_configuration(self, configuration_id: int) -> dict[str, Any]:
+        """Fetch one company configuration by numeric identifier."""
+
+        return await self._request("GET", f"/company/configurations/{configuration_id}")
+
+    async def search_company_configurations(
+        self,
+        *,
+        company_id: int | None = None,
+        contact_id: int | None = None,
+        username: str | None = None,
+        name: str | None = None,
+        device_identifier: str | None = None,
+        active: bool | None = True,
+        page: int = 1,
+        page_size: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Search company configuration items by company, contact, or username-like fields."""
+
+        conditions: list[str] = []
+        if company_id is not None:
+            conditions.append(f"company/id={company_id}")
+        if contact_id is not None:
+            conditions.append(f"contact/id={contact_id}")
+        if username:
+            escaped = self._escape(username)
+            conditions.append(
+                f'(lastLoginName contains "{escaped}" or name contains "{escaped}" or deviceIdentifier contains "{escaped}")'
+            )
+        if name:
+            conditions.append(f'name contains "{self._escape(name)}"')
+        if device_identifier:
+            conditions.append(f'deviceIdentifier contains "{self._escape(device_identifier)}"')
+        if active is not None:
+            conditions.append(f"activeFlag={str(active).lower()}")
+
+        params = {
+            "page": page,
+            "pageSize": self._bounded_page_size(page_size),
+            "orderBy": "name asc",
+        }
+        if conditions:
+            params["conditions"] = " and ".join(conditions)
+
+        payload = await self._request("GET", "/company/configurations", params=params)
+        return self._expect_list_response(
+            payload,
+            method="GET",
+            path="/company/configurations",
+        )
+
     async def get_ticket_schedule_entries(
         self,
         ticket_id: int,

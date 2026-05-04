@@ -214,6 +214,51 @@ async def test_list_tickets_about_to_breach_uses_slim_fields_and_filters_active_
     )
 
 
+async def test_get_ticket_configurations_calls_service_ticket_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data=[{"id": 77, "deviceIdentifier": "LAPTOP-77"}]),
+    )
+
+    client = ConnectWiseClient()
+    result = await client.get_ticket_configurations(12345, page=2, page_size=500)
+
+    assert result == [{"id": 77, "deviceIdentifier": "LAPTOP-77"}]
+    assert calls[0]["method"] == "GET"
+    assert calls[0]["url"].endswith("/service/tickets/12345/configurations")
+    assert calls[0]["params"] == {"page": 2, "pageSize": 100}
+
+
+async def test_search_company_configurations_builds_username_conditions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data=[]),
+    )
+
+    client = ConnectWiseClient()
+    await client.search_company_configurations(
+        company_id=12,
+        contact_id=34,
+        username='jane"s',
+        active=True,
+        page_size=10,
+    )
+
+    params = calls[0]["params"]
+    assert calls[0]["url"].endswith("/company/configurations")
+    assert params["page"] == 1
+    assert params["pageSize"] == 10
+    assert params["orderBy"] == "name asc"
+    assert params["conditions"] == (
+        'company/id=12 and contact/id=34 and '
+        '(lastLoginName contains "jane\\"s" or name contains "jane\\"s" or deviceIdentifier contains "jane\\"s") and '
+        'activeFlag=true'
+    )
+
 async def test_search_members_builds_expected_conditions(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = install_fake_async_client(
         monkeypatch,

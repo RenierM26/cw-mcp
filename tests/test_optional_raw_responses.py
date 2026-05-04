@@ -72,6 +72,41 @@ class FakeClient:
     async def get_ticket_time_entries(self, ticket_id: int, **kwargs: Any) -> list[dict[str, Any]]:
         return [{"id": 20, "timeStart": "2026-04-20T15:30:00Z"}]
 
+    async def get_ticket_configurations(self, ticket_id: int, **kwargs: Any) -> list[dict[str, Any]]:
+        return [{"id": 77, "deviceIdentifier": "LAPTOP-77"}]
+
+    async def get_company_configuration(self, configuration_id: int) -> dict[str, Any]:
+        return {
+            "id": configuration_id,
+            "name": "Jane Laptop",
+            "company": {"id": 1, "name": "Example Co"},
+            "contact": {"id": 2, "name": "Jane Smith"},
+            "deviceIdentifier": "LAPTOP-77",
+            "lastLoginName": "jane.smith",
+            "activeFlag": True,
+        }
+
+    async def search_company_configurations(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": 77,
+                "name": "Jane Laptop",
+                "company": {"id": 1, "name": "Example Co"},
+                "contact": {"id": 2, "name": "Jane Smith"},
+                "deviceIdentifier": "LAPTOP-77",
+                "lastLoginName": "jane.smith",
+                "activeFlag": True,
+            },
+            {
+                "id": 88,
+                "name": "Warehouse PC",
+                "company": {"id": 1, "name": "Example Co"},
+                "deviceIdentifier": "WAREHOUSE-PC",
+                "lastLoginName": "warehouse",
+                "activeFlag": True,
+            },
+        ]
+
     async def list_tickets_about_to_breach(self, **kwargs: Any) -> dict[str, list[dict[str, Any]]]:
         return {
             "about_to_breach": [
@@ -242,3 +277,59 @@ async def test_get_ticket_type_hierarchy_returns_only_type_tree(fake_client: Fak
     assert result["subtypes"] == [{"id": 9, "name": "Remote Access", "inactive": None, "defaultFlag": None}]
     assert result["items"] == [{"id": 14, "name": "VPN", "inactive": None, "defaultFlag": None}]
     assert result["nextStep"] == "choose type_id, subtype_id, and item_id, then call patch_ticket_type_hierarchy_unvalidated"
+
+async def test_get_ticket_configuration_lookup_returns_attached_and_contact_configs(
+    fake_client: FakeClient,
+) -> None:
+    fake_client.ticket = {
+        "id": 12345,
+        "summary": "VPN issue",
+        "company": {"id": 1, "name": "Example Co"},
+        "contact": {"id": 2, "name": "Jane Smith"},
+    }
+
+    result = await tickets_module.get_ticket_configuration_lookup(ticket_id=12345)
+
+    assert result["ok"] is True
+    assert result["attached"]["references"] == [{"id": 77, "deviceIdentifier": "LAPTOP-77"}]
+    assert result["attached"]["data"][0]["lastLoginName"] == "jane.smith"
+    assert result["contactConfigurations"]["contactId"] == 2
+    assert result["contactConfigurations"]["count"] == 2
+    assert "raw" not in result["attached"]
+
+
+async def test_suggest_company_configuration_for_username_scores_best_match(
+    fake_client: FakeClient,
+) -> None:
+    result = await tickets_module.suggest_company_configuration_for_username(
+        company_id=1,
+        username="jane.smith",
+    )
+
+    assert result["ok"] is True
+    assert result["suggestion"]["id"] == 77
+    assert result["suggestion"]["match"] == {
+        "score": 1.0,
+        "matchedUsername": "jane.smith",
+        "matchedField": "lastLoginName",
+        "matchedValue": "jane.smith",
+    }
+    assert [item["id"] for item in result["data"]] == [77, 88]
+
+
+async def test_suggest_company_configuration_derives_username_from_ticket_contact(
+    fake_client: FakeClient,
+) -> None:
+    fake_client.ticket = {
+        "id": 12345,
+        "summary": "VPN issue",
+        "company": {"id": 1, "name": "Example Co"},
+        "contact": {"id": 2, "name": "Jane Smith", "email": "jane.smith@example.com"},
+    }
+
+    result = await tickets_module.suggest_company_configuration_for_username(ticket_id=12345)
+
+    assert result["companyId"] == 1
+    assert "jane.smith@example.com" in result["usernameCandidates"]
+    assert "jane.smith" in result["usernameCandidates"]
+    assert result["suggestion"]["id"] == 77
