@@ -12,6 +12,22 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ### Security
 
+## [0.4.0] - 2026-05-04
+
+### Added
+
+- Added `get_ticket_configuration_lookup` to return configuration items already attached to a service ticket plus configurations assigned to the ticket contact.
+- Added `suggest_company_configuration_for_username` to score company configurations by username-like fields (`lastLoginName`, `deviceIdentifier`, and name) and return the top matches with transparent match reasons.
+- Added `attach_ticket_configuration` to attach a selected company configuration item to a service ticket and read back attached references for confirmation.
+
+### Changed
+
+- Configuration suggestion results are limited to the top 5 matches by default, while reporting `totalMatched` for visibility into the wider company configuration set.
+- Documented the configuration lookup, suggestion, and attach workflow in the README.
+- Verified the configuration lookup/suggestion/attach flow live against ConnectWise using test ticket `659995`.
+
+### Security
+
 ## [0.3.0] - 2026-05-03
 
 ### Added
