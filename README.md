@@ -188,6 +188,8 @@ When several read tools look similar, use the narrowest tool that answers the qu
 - use `search_tickets` when you do not know the ticket id yet
 - use `get_ticket` when you know the ticket id and only need the current ticket record
 - use `get_ticket_bundle` when you know the ticket id and need ticket details plus notes and time entries together
+- use `get_ticket_configuration_lookup` when you need configuration items already attached to the ticket or assigned to the ticket contact
+- use `suggest_company_configuration_for_username` when you need the closest company configuration match for a username before attaching a configuration item
 - use `get_ticket_notes` when you only need notes
 - use `get_ticket_time_entries` when you only need time entries
 - use `get_company` when you already know `company_id`
@@ -211,6 +213,8 @@ If a write fails validation or a required value is unknown, use the matching loo
 
 - `get_ticket`
 - `get_ticket_bundle`
+- `get_ticket_configuration_lookup`
+- `suggest_company_configuration_for_username`
 - `search_tickets`
 - `list_sla_risk_tickets`
 - `create_ticket`
@@ -513,6 +517,8 @@ This version is shaped around a common triage and update flow:
 - read ticket summary and description
 - read notes
 - read time entries
+- read ticket-attached and contact-linked configuration items
+- suggest company configuration items by closest username match
 - update classification fields like status, priority, board, type, subtype, item, team, severity, impact, and source
 - add ticket notes
 - update ticket notes
@@ -536,9 +542,11 @@ The safest time-entry flow is usually:
 
 A typical triage flow is:
 1. `get_ticket_bundle`
-2. decide on board/status/type updates
-3. `update_ticket_classifications`
-4. `add_ticket_note` if you want to record the action taken
+2. optional `get_ticket_configuration_lookup` to see current ticket/contact configuration items
+3. optional `suggest_company_configuration_for_username` to pick the closest company configuration by username-like fields (`lastLoginName`, `deviceIdentifier`, or name)
+4. decide on board/status/type updates
+5. `update_ticket_classifications`
+6. `add_ticket_note` if you want to record the action taken
 
 For paragraph-style notes, prefer `text_blocks`, `content_blocks`, `notes_blocks`, or
 `internal_notes_blocks`. The server joins blocks with blank lines, which avoids fragile
@@ -662,6 +670,70 @@ Example result excerpt:
     "raw": [
       { "...": "full time entry payload" }
     ]
+  }
+}
+```
+
+
+### Example: `get_ticket_configuration_lookup`
+
+Tool call arguments:
+
+```json
+{
+  "ticket_id": 12345
+}
+```
+
+Example result excerpt:
+
+```json
+{
+  "ok": true,
+  "ticketId": 12345,
+  "attached": {
+    "count": 1,
+    "references": [{"id": 77, "deviceIdentifier": "LAPTOP-77"}],
+    "data": [{"id": 77, "name": "Jane Laptop", "lastLoginName": "jane.smith"}]
+  },
+  "contactConfigurations": {
+    "contactId": 2,
+    "count": 1,
+    "data": [{"id": 77, "name": "Jane Laptop", "deviceIdentifier": "LAPTOP-77"}]
+  }
+}
+```
+
+### Example: `suggest_company_configuration_for_username`
+
+Tool call arguments:
+
+```json
+{
+  "ticket_id": 12345,
+  "username": "jane.smith"
+}
+```
+
+Example result excerpt:
+
+```json
+{
+  "ok": true,
+  "ticketId": 12345,
+  "companyId": 1,
+  "usernameCandidates": ["jane.smith"],
+  "suggestion": {
+    "id": 77,
+    "name": "Jane Laptop",
+    "deviceIdentifier": "LAPTOP-77",
+    "lastLoginName": "jane.smith",
+    "match": {
+      "score": 1.0,
+      "matchedUsername": "jane.smith",
+      "matchedField": "lastLoginName",
+      "matchedValue": "jane.smith"
+    }
   }
 }
 ```

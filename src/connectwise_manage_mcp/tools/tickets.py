@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from difflib import SequenceMatcher
 from typing import Any
 
 from connectwise_manage_mcp.app import mcp
@@ -38,6 +39,122 @@ def _ticket_summary(ticket: dict[str, Any]) -> dict[str, Any]:
         "updatedAt": ticket.get("_info", {}).get("lastUpdated") or ticket.get("lastUpdated"),
     }
 
+
+
+def _configuration_summary(configuration: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a ConnectWise configuration into a compact, matching-friendly shape."""
+
+    company = configuration.get("company") or {}
+    contact = configuration.get("contact") or {}
+    config_type = configuration.get("type") or {}
+    status = configuration.get("status") or {}
+    return {
+        "id": configuration.get("id"),
+        "name": configuration.get("name"),
+        "type": config_type.get("name"),
+        "status": status.get("name"),
+        "companyId": company.get("id"),
+        "company": company.get("name"),
+        "contactId": contact.get("id"),
+        "contact": contact.get("name"),
+        "deviceIdentifier": configuration.get("deviceIdentifier"),
+        "serialNumber": configuration.get("serialNumber"),
+        "tagNumber": configuration.get("tagNumber"),
+        "lastLoginName": configuration.get("lastLoginName"),
+        "ipAddress": configuration.get("ipAddress"),
+        "active": configuration.get("activeFlag"),
+        "updatedAt": configuration.get("_info", {}).get("lastUpdated") or configuration.get("lastUpdated"),
+    }
+
+
+def _configuration_reference_summary(reference: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a ticket configuration reference."""
+
+    return {
+        "id": reference.get("id"),
+        "deviceIdentifier": reference.get("deviceIdentifier"),
+    }
+
+
+def _username_candidates(ticket: dict[str, Any], contact_configurations: list[dict[str, Any]]) -> list[str]:
+    """Collect likely username strings from ticket contact and contact-owned configs."""
+
+    values: list[str] = []
+    contact = ticket.get("contact") or {}
+    for value in (
+        ticket.get("contactEmailLookup"),
+        ticket.get("contactEmailAddress"),
+        contact.get("email"),
+        contact.get("defaultEmailAddress"),
+        contact.get("name"),
+        ticket.get("contactName"),
+    ):
+        if isinstance(value, str) and value.strip():
+            values.append(value.strip())
+            if "@" in value:
+                values.append(value.split("@", 1)[0].strip())
+
+    for configuration in contact_configurations:
+        for value in (
+            configuration.get("lastLoginName"),
+            configuration.get("deviceIdentifier"),
+            configuration.get("name"),
+        ):
+            if isinstance(value, str) and value.strip():
+                values.append(value.strip())
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        key = value.lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(value)
+    return unique
+
+
+def _clean_match_value(value: str | None) -> str:
+    """Normalize user/device strings for fuzzy comparison."""
+
+    if not value:
+        return ""
+    return "".join(ch.lower() for ch in value if ch.isalnum())
+
+
+def _configuration_match_score(configuration: dict[str, Any], usernames: list[str]) -> dict[str, Any]:
+    """Score a configuration against candidate usernames without hiding the reason."""
+
+    searchable = {
+        "lastLoginName": configuration.get("lastLoginName"),
+        "deviceIdentifier": configuration.get("deviceIdentifier"),
+        "name": configuration.get("name"),
+    }
+    best = {"score": 0.0, "matchedUsername": None, "matchedField": None, "matchedValue": None}
+    for username in usernames:
+        clean_username = _clean_match_value(username)
+        if not clean_username:
+            continue
+        for field, value in searchable.items():
+            if not isinstance(value, str) or not value.strip():
+                continue
+            clean_value = _clean_match_value(value)
+            if not clean_value:
+                continue
+            if clean_username == clean_value:
+                score = 1.0
+            elif clean_username in clean_value or clean_value in clean_username:
+                score = min(len(clean_username), len(clean_value)) / max(len(clean_username), len(clean_value))
+                score = max(score, 0.92)
+            else:
+                score = SequenceMatcher(None, clean_username, clean_value).ratio()
+            if score > best["score"]:
+                best = {
+                    "score": round(score, 3),
+                    "matchedUsername": username,
+                    "matchedField": field,
+                    "matchedValue": value,
+                }
+    return best
 
 def _note_summary(note: dict[str, Any]) -> dict[str, Any]:
     """Normalize a raw ticket note into a compact summary."""
@@ -589,6 +706,114 @@ async def get_ticket_bundle(
         }, time_entries, include_raw=include_raw),
     }
 
+
+
+@mcp.tool(description="Lookup configuration items for a ticket. Returns configurations already attached to the ticket plus configurations assigned to the ticket contact. Use this before attaching a configuration item.")
+async def get_ticket_configuration_lookup(
+    ticket_id: int,
+    page_size: int = 50,
+    include_raw: bool = False,
+) -> dict[str, Any]:
+    """Fetch configuration references attached to a ticket and configs tied to the ticket contact."""
+
+    client = ConnectWiseClient()
+    ticket = await client.get_ticket(ticket_id)
+    attached_refs = await client.get_ticket_configurations(ticket_id, page_size=page_size)
+
+    hydrated_attached: list[dict[str, Any]] = []
+    for reference in attached_refs:
+        reference_id = reference.get("id")
+        if isinstance(reference_id, int):
+            hydrated_attached.append(await client.get_company_configuration(reference_id))
+
+    contact = ticket.get("contact") or {}
+    contact_id = contact.get("id")
+    contact_configurations: list[dict[str, Any]] = []
+    if isinstance(contact_id, int):
+        contact_configurations = await client.search_company_configurations(
+            contact_id=contact_id,
+            page_size=page_size,
+        )
+
+    return {
+        "ok": True,
+        "ticketId": ticket_id,
+        "ticket": _ticket_summary(ticket),
+        "attached": _with_optional_raw({
+            "count": len(attached_refs),
+            "references": [_configuration_reference_summary(reference) for reference in attached_refs],
+            "data": [_configuration_summary(configuration) for configuration in hydrated_attached],
+        }, {"references": attached_refs, "configurations": hydrated_attached}, include_raw=include_raw),
+        "contactConfigurations": _with_optional_raw({
+            "contactId": contact_id,
+            "count": len(contact_configurations),
+            "data": [_configuration_summary(configuration) for configuration in contact_configurations],
+        }, contact_configurations, include_raw=include_raw),
+    }
+
+
+@mcp.tool(description="Lookup company configurations and suggest which configuration item best matches a username. Required: company_id or ticket_id. If username is omitted with ticket_id, the tool derives candidates from the ticket contact and contact configurations.")
+async def suggest_company_configuration_for_username(
+    company_id: int | None = None,
+    ticket_id: int | None = None,
+    username: str | None = None,
+    active: bool = True,
+    page_size: int = 100,
+    include_raw: bool = False,
+) -> dict[str, Any]:
+    """Suggest the best company configuration to attach based on username-like fields."""
+
+    if company_id is None and ticket_id is None:
+        raise ConnectWiseError("Provide company_id or ticket_id.")
+
+    client = ConnectWiseClient()
+    ticket: dict[str, Any] | None = None
+    contact_configurations: list[dict[str, Any]] = []
+    if ticket_id is not None:
+        ticket = await client.get_ticket(ticket_id)
+        company_id = company_id or (ticket.get("company") or {}).get("id")
+        contact_id = (ticket.get("contact") or {}).get("id")
+        if isinstance(contact_id, int):
+            contact_configurations = await client.search_company_configurations(
+                contact_id=contact_id,
+                active=active,
+                page_size=page_size,
+            )
+
+    if not isinstance(company_id, int):
+        raise ConnectWiseError("Could not determine company_id. Provide company_id or use a ticket with a company id.")
+
+    usernames = [username.strip()] if isinstance(username, str) and username.strip() else []
+    if ticket is not None:
+        usernames.extend(_username_candidates(ticket, contact_configurations))
+    usernames = list(dict.fromkeys(usernames))
+    if not usernames:
+        raise ConnectWiseError("Provide username, or use ticket_id for a ticket with contact username/email details.")
+
+    configurations = await client.search_company_configurations(
+        company_id=company_id,
+        active=active,
+        page_size=page_size,
+    )
+    scored = []
+    for configuration in configurations:
+        score = _configuration_match_score(configuration, usernames)
+        scored.append({
+            **_configuration_summary(configuration),
+            "match": score,
+        })
+    scored.sort(key=lambda item: item["match"]["score"], reverse=True)
+
+    suggestion = scored[0] if scored and scored[0]["match"]["score"] > 0 else None
+    return _with_optional_raw({
+        "ok": True,
+        "ticketId": ticket_id,
+        "companyId": company_id,
+        "usernameCandidates": usernames,
+        "suggestion": suggestion,
+        "count": len(scored),
+        "data": scored,
+    }, configurations, include_raw=include_raw)
 
 @mcp.tool(description="Search ConnectWise service tickets with simple business-facing filters like board, status, company, or summary text. Use this when you do not know the numeric ticket id yet.")
 async def search_tickets(
