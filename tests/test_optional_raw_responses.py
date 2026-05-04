@@ -317,7 +317,23 @@ async def test_suggest_company_configuration_for_username_scores_best_match(
         "matchedField": "lastLoginName",
         "matchedValue": "jane.smith",
     }
+    assert result["count"] == 2
+    assert result["totalMatched"] == 2
+    assert result["limit"] == 5
     assert [item["id"] for item in result["data"]] == [77, 88]
+
+
+async def test_suggest_company_configuration_limits_results(fake_client: FakeClient) -> None:
+    result = await tickets_module.suggest_company_configuration_for_username(
+        company_id=1,
+        username="jane.smith",
+        limit=1,
+    )
+
+    assert result["count"] == 1
+    assert result["totalMatched"] == 2
+    assert result["limit"] == 1
+    assert [item["id"] for item in result["data"]] == [77]
 
 
 async def test_suggest_company_configuration_derives_username_from_ticket_contact(

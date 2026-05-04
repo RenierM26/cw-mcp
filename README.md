@@ -189,7 +189,7 @@ When several read tools look similar, use the narrowest tool that answers the qu
 - use `get_ticket` when you know the ticket id and only need the current ticket record
 - use `get_ticket_bundle` when you know the ticket id and need ticket details plus notes and time entries together
 - use `get_ticket_configuration_lookup` when you need configuration items already attached to the ticket or assigned to the ticket contact
-- use `suggest_company_configuration_for_username` when you need the closest company configuration match for a username before attaching a configuration item
+- use `suggest_company_configuration_for_username` when you need the closest company configuration matches for a username before attaching a configuration item; returns the top 5 by default
 - use `attach_ticket_configuration` after choosing the `configuration_id` to attach it to the service ticket
 - use `get_ticket_notes` when you only need notes
 - use `get_ticket_time_entries` when you only need time entries
@@ -726,6 +726,9 @@ Example result excerpt:
   "ticketId": 12345,
   "companyId": 1,
   "usernameCandidates": ["jane.smith"],
+  "count": 5,
+  "totalMatched": 100,
+  "limit": 5,
   "suggestion": {
     "id": 77,
     "name": "Jane Laptop",

@@ -759,6 +759,7 @@ async def suggest_company_configuration_for_username(
     username: str | None = None,
     active: bool = True,
     page_size: int = 100,
+    limit: int = 5,
     include_raw: bool = False,
 ) -> dict[str, Any]:
     """Suggest the best company configuration to attach based on username-like fields."""
@@ -803,16 +804,20 @@ async def suggest_company_configuration_for_username(
             "match": score,
         })
     scored.sort(key=lambda item: item["match"]["score"], reverse=True)
+    result_limit = max(1, min(limit, 25))
+    matches = scored[:result_limit]
 
-    suggestion = scored[0] if scored and scored[0]["match"]["score"] > 0 else None
+    suggestion = matches[0] if matches and matches[0]["match"]["score"] > 0 else None
     return _with_optional_raw({
         "ok": True,
         "ticketId": ticket_id,
         "companyId": company_id,
         "usernameCandidates": usernames,
         "suggestion": suggestion,
-        "count": len(scored),
-        "data": scored,
+        "count": len(matches),
+        "totalMatched": len(scored),
+        "limit": result_limit,
+        "data": matches,
     }, configurations, include_raw=include_raw)
 
 
