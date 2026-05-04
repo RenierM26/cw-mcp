@@ -189,7 +189,8 @@ When several read tools look similar, use the narrowest tool that answers the qu
 - use `get_ticket` when you know the ticket id and only need the current ticket record
 - use `get_ticket_bundle` when you know the ticket id and need ticket details plus notes and time entries together
 - use `get_ticket_configuration_lookup` when you need configuration items already attached to the ticket or assigned to the ticket contact
-- use `suggest_company_configuration_for_username` when you need the closest company configuration match for a username before attaching a configuration item
+- use `suggest_company_configuration_for_username` when you need the closest company configuration matches for a username before attaching a configuration item; returns the top 5 by default
+- use `attach_ticket_configuration` after choosing the `configuration_id` to attach it to the service ticket
 - use `get_ticket_notes` when you only need notes
 - use `get_ticket_time_entries` when you only need time entries
 - use `get_company` when you already know `company_id`
@@ -215,6 +216,7 @@ If a write fails validation or a required value is unknown, use the matching loo
 - `get_ticket_bundle`
 - `get_ticket_configuration_lookup`
 - `suggest_company_configuration_for_username`
+- `attach_ticket_configuration`
 - `search_tickets`
 - `list_sla_risk_tickets`
 - `create_ticket`
@@ -544,9 +546,10 @@ A typical triage flow is:
 1. `get_ticket_bundle`
 2. optional `get_ticket_configuration_lookup` to see current ticket/contact configuration items
 3. optional `suggest_company_configuration_for_username` to pick the closest company configuration by username-like fields (`lastLoginName`, `deviceIdentifier`, or name)
-4. decide on board/status/type updates
-5. `update_ticket_classifications`
-6. `add_ticket_note` if you want to record the action taken
+4. optional `attach_ticket_configuration` once you have confirmed the correct `configuration_id`
+5. decide on board/status/type updates
+6. `update_ticket_classifications`
+7. `add_ticket_note` if you want to record the action taken
 
 For paragraph-style notes, prefer `text_blocks`, `content_blocks`, `notes_blocks`, or
 `internal_notes_blocks`. The server joins blocks with blank lines, which avoids fragile
@@ -723,6 +726,9 @@ Example result excerpt:
   "ticketId": 12345,
   "companyId": 1,
   "usernameCandidates": ["jane.smith"],
+  "count": 5,
+  "totalMatched": 100,
+  "limit": 5,
   "suggestion": {
     "id": 77,
     "name": "Jane Laptop",
@@ -735,6 +741,33 @@ Example result excerpt:
       "matchedValue": "jane.smith"
     }
   }
+}
+```
+
+
+### Example: `attach_ticket_configuration`
+
+Tool call arguments:
+
+```json
+{
+  "ticket_id": 12345,
+  "configuration_id": 77,
+  "device_identifier": "LAPTOP-77"
+}
+```
+
+Example result excerpt:
+
+```json
+{
+  "ok": true,
+  "ticketId": 12345,
+  "configurationId": 77,
+  "deviceIdentifier": "LAPTOP-77",
+  "attached": true,
+  "data": {"id": 77, "deviceIdentifier": "LAPTOP-77"},
+  "attachedReferences": [{"id": 77, "deviceIdentifier": "LAPTOP-77"}]
 }
 ```
 
