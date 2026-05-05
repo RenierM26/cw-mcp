@@ -13,6 +13,19 @@ def test_boolean_env_parser_rejects_unknown_values(monkeypatch: pytest.MonkeyPat
         get_settings()
 
 
+def test_mcp_stateless_http_defaults_to_false() -> None:
+    settings = Settings()
+
+    assert settings.mcp_stateless_http is False
+
+
+def test_mcp_stateless_http_can_be_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MCP_STATELESS_HTTP", "true")
+    get_settings.cache_clear()
+
+    assert get_settings().mcp_stateless_http is True
+
+
 def test_port_must_be_integer(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PORT", "eight-thousand")
     get_settings.cache_clear()

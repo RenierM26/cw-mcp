@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir . \
 USER app
 
 ENV TRANSPORT=http \
+    MCP_STATELESS_HTTP=true \
     HOST=0.0.0.0 \
     PORT=8000
 

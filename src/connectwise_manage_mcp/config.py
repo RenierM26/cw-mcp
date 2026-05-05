@@ -65,6 +65,9 @@ class Settings(BaseModel):
 
     server_name: str = "ConnectWise Manage MCP"
     transport: str = Field(default_factory=lambda: os.getenv("TRANSPORT", "http"))
+    mcp_stateless_http: bool = Field(
+        default_factory=lambda: _env_bool("MCP_STATELESS_HTTP", False)
+    )
     host: str = Field(default_factory=lambda: os.getenv("HOST", "0.0.0.0"))
     port: int = Field(default_factory=lambda: _env_int("PORT", 8000))
     log_level: str = Field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))

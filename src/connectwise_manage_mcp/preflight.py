@@ -40,6 +40,7 @@ def _check_settings() -> dict[str, Any]:
         "warnings": warnings,
         "server": {
             "transport": settings.transport,
+            "mcpStatelessHttp": settings.mcp_stateless_http,
             "host": settings.host,
             "port": settings.port,
             "authEnabled": settings.auth_enabled,

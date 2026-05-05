@@ -12,6 +12,8 @@ from starlette.testclient import TestClient
 from connectwise_manage_mcp.config import get_settings
 from connectwise_manage_mcp.server import BearerTokenAuthMiddleware, ConnectWiseClient, create_http_app
 
+EXPECTED_AUTHENTICATED_MCP_GET_STATUSES = {405, 406}
+
 
 @pytest.fixture
 def auth_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
@@ -66,7 +68,7 @@ def test_mcp_allows_bearer_token(auth_env: None, monkeypatch: pytest.MonkeyPatch
             headers={"Authorization": "Bearer super-secret-token", "Accept": "application/json"},
         )
 
-    assert response.status_code == 406
+    assert response.status_code in EXPECTED_AUTHENTICATED_MCP_GET_STATUSES
 
 
 
@@ -80,7 +82,7 @@ def test_mcp_allows_lowercase_bearer_scheme(auth_env: None, monkeypatch: pytest.
             headers={"Authorization": "bearer super-secret-token", "Accept": "application/json"},
         )
 
-    assert response.status_code == 406
+    assert response.status_code in EXPECTED_AUTHENTICATED_MCP_GET_STATUSES
 
 
 
@@ -97,6 +99,7 @@ def test_live_is_not_blocked_by_bearer_auth(auth_env: None, monkeypatch: pytest.
         "configured": False,
         "authEnabled": True,
         "ipAllowlistEnabled": False,
+        "mcpStatelessHttp": False,
     }
 
 
@@ -175,7 +178,7 @@ def test_mcp_allows_request_from_allowed_forwarded_ip(
             },
         )
 
-    assert response.status_code == 406
+    assert response.status_code in EXPECTED_AUTHENTICATED_MCP_GET_STATUSES
 
 
 def test_bearer_middleware_uses_constructor_allowlist_not_cached_settings(
