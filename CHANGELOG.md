@@ -10,7 +10,7 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
-- Streamable HTTP now defaults to stateless mode via `MCP_STATELESS_HTTP=true`, avoiding intermittent `Session not found` errors with n8n and hosted clients that do not consistently preserve MCP session ids across POSTs.
+- Added `MCP_STATELESS_HTTP=true` to opt into stateless Streamable HTTP, avoiding intermittent `Session not found` errors with n8n and hosted clients that do not consistently preserve MCP session ids across POSTs.
 - Documented the `MCP_STATELESS_HTTP` setting in Docker, Compose, README, and Azure Container Apps guidance.
 
 ### Security
