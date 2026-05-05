@@ -54,6 +54,7 @@ Additional controls:
 
 - `AUTH_ALLOWED_IPS` can restrict `/mcp` to specific IPs or CIDR ranges
 - `AUTH_TRUST_X_FORWARDED_FOR=true` can be used behind trusted proxies when enforcing forwarded client IPs
+- `MCP_STATELESS_HTTP=true` is the recommended default for n8n and hosted Streamable HTTP clients
 - the Docker image runs as a non-root user
 - the Compose example uses a read-only filesystem, drops capabilities, and disables privilege escalation
 - CI runs unit tests, type checks, linting, container startup/auth smoke tests, CodeQL, and Trivy scanning
@@ -945,7 +946,7 @@ Check:
 - `CW_PRIVATE_KEY`
 - `CW_CLIENT_ID`
 
-### `/mcp` returns `406 Not Acceptable` in a browser
+### `/mcp` returns `405 Method Not Allowed` or `406 Not Acceptable` in a browser
 
 That is usually expected.
 The `/mcp` route is an MCP transport endpoint, not a normal browser page.

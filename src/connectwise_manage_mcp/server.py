@@ -106,7 +106,12 @@ def create_http_app() -> Any:
             )
         )
 
-    return mcp.http_app(path="/mcp", middleware=middleware, transport="http")
+    return mcp.http_app(
+        path="/mcp",
+        middleware=middleware,
+        transport="http",
+        stateless_http=settings.mcp_stateless_http,
+    )
 
 
 @mcp.custom_route("/live", methods=["GET"])  # type: ignore[arg-type]
@@ -120,6 +125,7 @@ async def live(_: Any) -> Response:
             "configured": settings.is_configured,
             "authEnabled": settings.auth_enabled,
             "ipAllowlistEnabled": bool(settings.auth_allowed_ips),
+            "mcpStatelessHttp": settings.mcp_stateless_http,
         }
     )
 

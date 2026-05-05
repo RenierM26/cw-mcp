@@ -21,6 +21,7 @@ Container:
 
 Environment variables:
 - `TRANSPORT=http`
+- `MCP_STATELESS_HTTP=true` (recommended for n8n and hosted Streamable HTTP clients)
 - `HOST=0.0.0.0`
 - `PORT=8000`
 - `LOG_LEVEL=INFO`
@@ -127,6 +128,7 @@ az containerapp create \
   --registry-server "$ACR_NAME.azurecr.io" \
   --env-vars \
     TRANSPORT=http \
+    MCP_STATELESS_HTTP=true \
     HOST=0.0.0.0 \
     PORT=8000 \
     LOG_LEVEL=INFO \
@@ -184,6 +186,11 @@ Authorization: Bearer <AUTH_BEARER_TOKEN>
 If you also enable `AUTH_ALLOWED_IPS`, make sure the allowlist contains the public egress IP or CIDR used by n8n or your gateway.
 
 If n8n sits in the same private environment, prefer the internal URL. That keeps the ConnectWise wrapper off the public internet.
+
+For n8n, keep `MCP_STATELESS_HTTP=true`. Some hosted MCP clients do not preserve the
+Streamable HTTP session id consistently across all POSTs; stateless mode lets each
+request create its own FastMCP transport instead of looking up a prior in-memory
+session, avoiding intermittent `Session not found` errors.
 
 ## Operational advice
 
