@@ -898,6 +898,24 @@ async def test_update_ticket_note_patches_text_and_internal_flag(monkeypatch: py
     ]
 
 
+async def test_update_ticket_note_restores_detail_flag_when_made_public(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = install_fake_async_client(
+        monkeypatch,
+        lambda method, url, **kwargs: FakeResponse(200, json_data={"id": 77}),
+    )
+
+    client = ConnectWiseClient()
+    await client.update_ticket_note(12345, 77, text="Public update", internal=False)
+
+    assert calls[0]["json"] == [
+        {"op": "replace", "path": "text", "value": "Public update"},
+        {"op": "replace", "path": "internalAnalysisFlag", "value": False},
+        {"op": "replace", "path": "detailDescriptionFlag", "value": True},
+    ]
+
+
 async def test_delete_ticket_note_uses_ticket_note_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = install_fake_async_client(
         monkeypatch,

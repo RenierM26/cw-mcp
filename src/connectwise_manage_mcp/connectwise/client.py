@@ -493,8 +493,7 @@ class ConnectWiseClient:
         patches: list[dict[str, Any]] = [{"op": "replace", "path": "text", "value": text}]
         if internal is not None:
             patches.append({"op": "replace", "path": "internalAnalysisFlag", "value": internal})
-            if internal:
-                patches.append({"op": "replace", "path": "detailDescriptionFlag", "value": False})
+            patches.append({"op": "replace", "path": "detailDescriptionFlag", "value": not internal})
         return await self._request("PATCH", f"/service/tickets/{ticket_id}/notes/{note_id}", json=patches)
 
     async def delete_ticket_note(self, ticket_id: int, note_id: int) -> dict[str, Any]:
