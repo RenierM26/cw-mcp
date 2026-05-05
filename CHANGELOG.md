@@ -12,6 +12,17 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ### Security
 
+## [0.6.0] - 2026-05-05
+
+### Added
+
+### Changed
+
+- Internal ticket notes now send `detailDescriptionFlag=false` when created, while public notes continue to use `detailDescriptionFlag=true`.
+- Updating an existing ticket note with `internal=true` now also clears `detailDescriptionFlag` so a note cannot remain both internal and a detail-description note.
+
+### Security
+
 ## [0.5.0] - 2026-05-05
 
 ### Added
