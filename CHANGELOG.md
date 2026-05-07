@@ -12,6 +12,17 @@ This project follows a lightweight [Keep a Changelog](https://keepachangelog.com
 
 ### Security
 
+## [0.7.0] - 2026-05-07
+
+### Added
+
+### Changed
+
+- Classification hierarchy lookup responses now return compact `id` and `name` objects for types, subtypes, and items instead of including empty `inactive` and `defaultFlag` fields.
+- `get_board_lookup`, `get_board_types`, `get_board_subtypes`, `get_board_items`, and `get_ticket_type_hierarchy` keep using ConnectWise `fields` filters for the hierarchy data so MCP responses stay small for LLM workflows.
+
+### Security
+
 ## [0.6.0] - 2026-05-05
 
 ### Added

@@ -41,14 +41,12 @@ def _board_status_summary(status: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _board_type_summary(item: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a board type, subtype, or item record."""
+def _id_name_summary(item: dict[str, Any]) -> dict[str, Any]:
+    """Normalize compact lookup records that only need selection ids and labels."""
 
     return {
         "id": item.get("id"),
         "name": item.get("name"),
-        "inactive": item.get("inactiveFlag"),
-        "defaultFlag": item.get("defaultFlag"),
     }
 
 
@@ -167,7 +165,7 @@ async def get_board_lookup(
         "ok": True,
         "boardId": board_id,
         "statuses": [_board_status_summary(status) for status in statuses],
-        "types": [_board_type_summary(board_type) for board_type in types],
+        "types": [_id_name_summary(board_type) for board_type in types],
         "teams": [_board_team_summary(team) for team in teams],
     }
 
@@ -179,12 +177,12 @@ async def get_board_lookup(
 
     if type_id is not None:
         subtypes = await client.get_board_subtypes(board_id, type_id)
-        result["subtypes"] = [_board_type_summary(subtype) for subtype in subtypes]
+        result["subtypes"] = [_id_name_summary(subtype) for subtype in subtypes]
         raw_payload["subtypes"] = subtypes
 
         if subtype_id is not None:
             items = await client.get_board_items(board_id, type_id, subtype_id)
-            result["items"] = [_board_type_summary(item) for item in items]
+            result["items"] = [_id_name_summary(item) for item in items]
             raw_payload["items"] = items
 
     return _with_optional_raw(result, raw_payload, include_raw=include_raw)
@@ -227,7 +225,7 @@ async def get_board_types(board_id: int, include_raw: bool = False) -> dict[str,
         "ok": True,
         "boardId": board_id,
         "count": len(board_types),
-        "data": [_board_type_summary(board_type) for board_type in board_types],
+        "data": [_id_name_summary(board_type) for board_type in board_types],
     }, board_types, include_raw=include_raw)
 
 
@@ -242,7 +240,7 @@ async def get_board_subtypes(board_id: int, type_id: int, include_raw: bool = Fa
         "boardId": board_id,
         "typeId": type_id,
         "count": len(subtypes),
-        "data": [_board_type_summary(subtype) for subtype in subtypes],
+        "data": [_id_name_summary(subtype) for subtype in subtypes],
     }, subtypes, include_raw=include_raw)
 
 
@@ -263,7 +261,7 @@ async def get_board_items(
         "typeId": type_id,
         "subtypeId": subtype_id,
         "count": len(items),
-        "data": [_board_type_summary(item) for item in items],
+        "data": [_id_name_summary(item) for item in items],
     }, items, include_raw=include_raw)
 
 
@@ -290,20 +288,20 @@ async def get_ticket_type_hierarchy(
 
     types = await client.get_board_types(board_id)
     raw_payload["types"] = types
-    result["types"] = [_board_type_summary(board_type) for board_type in types]
+    result["types"] = [_id_name_summary(board_type) for board_type in types]
 
     if type_id is not None:
         subtypes = await client.get_board_subtypes(board_id, type_id)
         raw_payload["subtypes"] = subtypes
         result["typeId"] = type_id
-        result["subtypes"] = [_board_type_summary(subtype) for subtype in subtypes]
+        result["subtypes"] = [_id_name_summary(subtype) for subtype in subtypes]
         result["nextStep"] = "choose subtype_id, then call again with board_id, type_id, and subtype_id"
 
         if subtype_id is not None:
             items = await client.get_board_items(board_id, type_id, subtype_id)
             raw_payload["items"] = items
             result["subtypeId"] = subtype_id
-            result["items"] = [_board_type_summary(item) for item in items]
+            result["items"] = [_id_name_summary(item) for item in items]
             result["nextStep"] = "choose type_id, subtype_id, and item_id, then call patch_ticket_type_hierarchy_unvalidated"
 
     return _with_optional_raw(result, raw_payload, include_raw=include_raw)

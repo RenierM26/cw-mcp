@@ -39,7 +39,7 @@ ghcr.io/renierm26/connectwise-manage-mcp:latest
 For repeatable deployments, prefer a versioned image once releases are cut:
 
 ```text
-ghcr.io/renierm26/connectwise-manage-mcp:v0.1.0
+ghcr.io/renierm26/connectwise-manage-mcp:v0.7.0
 ```
 
 ## Security model
@@ -66,7 +66,7 @@ Do not commit `.env` files or real ConnectWise credentials.
 Before promoting a deployment:
 
 1. Confirm the target commit has green CI and security checks.
-2. Prefer a release tag such as `v0.1.0`, or use the Git SHA image tag.
+2. Prefer a release tag such as `v0.7.0`, or use the Git SHA image tag.
 3. Update the runtime platform to the selected image tag.
 4. Verify `/live` after deployment, then `/health` for upstream readiness.
 5. Verify your MCP client can connect to `/mcp` with the bearer token.
@@ -537,6 +537,8 @@ The safest classification flow is usually:
 3. `get_ticket_type_hierarchy` or the step tools: `get_board_types`, then `get_board_subtypes`, then `get_board_items`
 4. `update_ticket_classifications` with ids when available
 
+Classification hierarchy lookup results are intentionally compact: types, subtypes, and items return only `id` and `name` unless `include_raw=true` is requested.
+
 The safest time-entry flow is usually:
 1. `search_members`
 2. `list_work_types`
@@ -850,9 +852,7 @@ Example result excerpt:
   "types": [
     {
       "id": 3,
-      "name": "Incident",
-      "inactive": false,
-      "defaultFlag": true
+      "name": "Incident"
     }
   ],
   "teams": [
@@ -866,17 +866,13 @@ Example result excerpt:
   "subtypes": [
     {
       "id": 9,
-      "name": "Remote Access",
-      "inactive": false,
-      "defaultFlag": false
+      "name": "Remote Access"
     }
   ],
   "items": [
     {
       "id": 14,
-      "name": "VPN",
-      "inactive": false,
-      "defaultFlag": false
+      "name": "VPN"
     }
   ],
   "raw": {
