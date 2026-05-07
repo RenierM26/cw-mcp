@@ -78,7 +78,7 @@ Example arguments:
   "board_id": 12
 }
 
-Choose type_id from the returned types.
+Choose type_id from the returned types. Hierarchy records are compact and include only id and name by default.
 
 5. Fetch hierarchy step 2: subtypes.
 
