@@ -64,7 +64,7 @@ jobs:
             type=sha
 
       - name: Build and push release image
-        uses: docker/build-push-action@v7.1.0
+        uses: docker/build-push-action@v7.3.0
         with:
           context: .
           push: true
